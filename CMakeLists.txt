@@ -12,8 +12,9 @@ message(STATUS "SimplyCPP ${SC_MODULE} Version: ${SC_VERSION}")
 ################
 # Dependencies #
 ################
-find_or_install_package(rdkafka librdkafka-dev librdkafka)
+config_or_install_package(rdkafka librdkafka-dev librdkafka)
 find_or_fetch_package(modern-cpp-kafka-api GIT_REPOSITORY https://github.com/morganstanley/modern-cpp-kafka.git)
+find_library(SC_KAFKA_RDKAFKA_LIBRARY NAMES rdkafka HINTS ${rdkafka_LIBRARY_DIRS} REQUIRED)
 
 ###########
 # Objects #
@@ -22,9 +23,8 @@ set(SOURCE_OBJECTS include/kafka.h)
 set(SOURCE_LIBRARIES)
 set(SOURCE_LINK_LIBRARIES)
 
-add_sc_object(handler)
-add_sc_object(kafka LINK_LIBRARIES modern-cpp-kafka-api PUBLIC_LINK_LIBRARIES modern-cpp-kafka-api)
-add_sc_object(protobuf)
+add_sc_object(kafka LINK_LIBRARIES modern-cpp-kafka-api
+        PUBLIC_LINK_LIBRARIES ${SC_KAFKA_RDKAFKA_LIBRARY})
 
 ######################
 # Exported Libraries #
@@ -34,7 +34,13 @@ add_sc_libraries(DESCRIPTION "simply-cpp-kafka")
 ################
 # Installation #
 ################
-install_sc_module()
+install_sc_module(PATH_VARS CMAKE_INSTALL_INCLUDEDIR)
+install(FILES cmake/SimplyCppFunctions.cmake cmake/sc_bootstrap.cmake
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/sc-kafka
+        COMPONENT development)
+install(FILES tests/sc_test.h
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+        COMPONENT development)
 
 #########
 # Tests #
@@ -55,4 +61,4 @@ endif ()
 #############
 # Packaging #
 #############
-package_sc_module()
+package_sc_module(DEPENDS librdkafka++1)

@@ -1,51 +1,40 @@
-#include "handler.h"
+#include <kafka.h>
+#include <sc_test.h>
 
-using namespace std;
+int main() {
+    sc::kafka consumer{"localhost:9092"};
 
+    SECTION("Default consumer configuration");
+    CHECK_EQ(consumer.MaxRecords(), 0);
+    CHECK_EQ(consumer.FromBeginning(), false);
+    CHECK_EQ(consumer.Poll(), 200);
+    CHECK_EQ(consumer.PollAtEnd(), 5000);
+    CHECK_EQ(consumer.ClientId(), "simply-cpp-kafka");
+    CHECK_EQ(consumer.GroupId(), "simply-cpp-kafka");
+    CHECK_EQ(consumer.AutoCommit(), false);
+    CHECK_EQ(consumer.LogLevel(), 3);
 
-int main(int argc, char* argv[])
-{
-    cout << "Starting up.." << endl;
-    sc::kafka vms("10.0.105.7:9092");
-#ifdef NDEBUG
-    vms.MaxRecords(0);
-    vms.Poll(200);
-    vms.PollAtEnd(1000);
-    vms.AddTopic("alarm_as_topic");
-    vms.AddTopic("alarm_message_topic");
-    vms.AddTopic("alarm_only_topic");
-    vms.AddTopic("device_media_enevt_topic");
-    vms.AddTopic("device_register_topic");
-    vms.AddTopic("device_upgrade_result_topic");
-    vms.AddTopic("heartbeat_topic");
-    vms.AddTopic("location_status_topic");
-    vms.AddTopic("location_topic");
-    vms.AddTopic("rule_engine_topic");
-    vms.AddTopic("ta_clistener_topic");
-    vms.AddTopic("media_file_topic");
-    // vms.AddTopic("terminal_upload_topic");
-    vms.AddTopic("vehicle_alarm_topic");
+    SECTION("Consumer configuration");
+    consumer.MaxRecords(25);
+    consumer.FromBeginning(true);
+    consumer.Poll(100);
+    consumer.PollAtEnd(750);
+    consumer.ClientId("streamvms-client");
+    consumer.GroupId("streamvms-consumers");
+    consumer.AutoCommit(true);
+    consumer.LogLevel(6);
 
-#else
-    vms.MaxRecords(10);
-    vms.Poll(200);
-    vms.FromBeginning(false);
-    // vms.AddTopic("alarm_as_topic");
-    // vms.AddTopic("alarm_message_topic");
-    // vms.AddTopic("alarm_only_topic");
-    // vms.AddTopic("device_media_enevt_topic");
-    // vms.AddTopic("device_register_topic");
-    // vms.AddTopic("device_upgrade_result_topic");
-    // vms.AddTopic("heartbeat_topic");
-    // vms.AddTopic("location_status_topic");
-    // vms.AddTopic("location_topic");
-    // vms.AddTopic("rule_engine_topic");
-    vms.AddTopic("ta_clistener_topic");
-    // vms.AddTopic("media_file_topic");
-    // vms.AddTopic("terminal_upload_topic");
-    // vms.AddTopic("vehicle_alarm_topic");
-#endif
+    CHECK_EQ(consumer.MaxRecords(), 25);
+    CHECK_EQ(consumer.FromBeginning(), true);
+    CHECK_EQ(consumer.Poll(), 100);
+    CHECK_EQ(consumer.PollAtEnd(), 750);
+    CHECK_EQ(consumer.ClientId(), "streamvms-client");
+    CHECK_EQ(consumer.GroupId(), "streamvms-consumers");
+    CHECK_EQ(consumer.AutoCommit(), true);
+    CHECK_EQ(consumer.LogLevel(), 6);
 
-    vms.consume(Handler);
-    cout << "Done" << endl;
+    SECTION("No-topic consumption does not contact Kafka");
+    CHECK_NOTHROW(consumer.consume([](const sc::kafka_message &) {}));
+
+    TEST_SUMMARY();
 }
