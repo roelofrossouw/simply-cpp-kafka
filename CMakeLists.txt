@@ -13,7 +13,9 @@ message(STATUS "SimplyCPP ${SC_MODULE} Version: ${SC_VERSION}")
 # Dependencies #
 ################
 config_or_install_package(rdkafka librdkafka-dev librdkafka)
-find_or_fetch_package(modern-cpp-kafka-api GIT_REPOSITORY https://github.com/morganstanley/modern-cpp-kafka.git)
+find_or_fetch_package(modern-cpp-kafka-api
+        GIT_REPOSITORY https://github.com/morganstanley/modern-cpp-kafka.git
+        GIT_TAG v2023.01.05)
 find_library(SC_KAFKA_RDKAFKA_LIBRARY NAMES rdkafka HINTS ${rdkafka_LIBRARY_DIRS} REQUIRED)
 
 ###########
