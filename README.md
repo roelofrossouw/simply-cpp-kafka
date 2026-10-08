@@ -39,7 +39,10 @@ consumer.consume([](const sc::kafka_message& message) {
 });
 ```
 
-`consume()` returns without creating a Kafka connection when no topics have
+`AddTopic()` also takes a `std::vector<std::string>` or a braced list, adding
+every item, e.g. `consumer.AddTopic(sc::explode("topic1;topic2"))` or
+`consumer.AddTopic({"topic1", "topic2"})`. Adding a topic twice has no
+effect. `consume()` returns without creating a Kafka connection when no topics have
 been added. Set `MaxRecords()` to a positive number for bounded consumers and
 tests; the default (`0`) consumes until interrupted with `SIGINT` or `SIGTERM`.
 Set `ClientId()` and `GroupId()` for each deployed consumer; both default to
@@ -82,7 +85,7 @@ sc::kafka consumer{brokers};
 consumer.ClientId(client_id);
 consumer.GroupId(group_id);
 consumer.MaxRecords(max_records);
-for (const auto &topic : topics) consumer.AddTopic(topic);
+consumer.AddTopic(topics);
 
 int received = 0;
 consumer.consume([&](const sc::kafka_message &message) {

@@ -36,5 +36,18 @@ int main() {
     SECTION("No-topic consumption does not contact Kafka");
     CHECK_NOTHROW(consumer.consume([](const sc::kafka_message &) {}));
 
+    SECTION("Adding an empty topic list adds no topics");
+    consumer.AddTopic(std::vector<std::string>{});
+    CHECK_NOTHROW(consumer.consume([](const sc::kafka_message &) {}));
+
+    SECTION("Topics can be added one at a time, as a vector or as a braced list");
+    // The topic set is private, so this checks that every call form compiles and resolves.
+    sc::kafka topics{"localhost:9092"};
+    topics.AddTopic("one");
+    topics.AddTopic(std::vector<std::string>{"two", "three"});
+    topics.AddTopic({"four"});
+    topics.AddTopic({"five", "six"});
+    CHECK_NOTHROW(topics.AddTopic("one"));
+
     TEST_SUMMARY();
 }

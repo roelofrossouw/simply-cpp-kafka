@@ -38,7 +38,7 @@ int main() {
         consumer.ClientId(client_id);
         consumer.GroupId(group_id);
         consumer.MaxRecords(max_records);
-        for (const auto &topic : topics) consumer.AddTopic(topic);
+        consumer.AddTopic(topics);
 
         int received = 0;
         consumer.consume([&](const sc::kafka_message &message) {
