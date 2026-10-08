@@ -8,6 +8,7 @@
 
 #include <core.h>
 #include <demo_servers.h>
+#include <ip_endpoints.h>
 #include <kafka.h>
 #include <timer.h>
 
@@ -16,11 +17,7 @@
 
 int main() {
     try {
-        std::string brokers;
-        for (const auto &broker : sc::demo_servers("SC_KAFKA_DEMO_BROKERS", 9092)) {
-            if (!brokers.empty()) brokers += ',';
-            brokers += broker.to_string();
-        }
+        const auto brokers = sc::ip_endpoints{sc::demo_servers("SC_KAFKA_DEMO_BROKERS", 9092)}.to_string(",");
         auto topics = sc::explode(sc::getenv("SC_KAFKA_DEMO_TOPICS"));
         std::erase(topics, "");  // tolerate "a;;b" and a trailing ';'
         if (topics.empty()) {
