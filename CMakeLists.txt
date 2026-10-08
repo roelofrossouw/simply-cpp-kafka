@@ -52,14 +52,6 @@ if (SC_KAFKA_BUILD_TESTS)
     add_subdirectory(tests sc-kafka-test)
 endif ()
 
-############
-# Binaries #
-############
-
-#add_executable(sc-demo-db apps/sc-demo-db.cpp)
-#target_link_libraries(sc-demo-db PRIVATE sc::sc-db-shared)
-#install(TARGETS sc-demo-db RUNTIME DESTINATION bin COMPONENT runtime)
-
 #############
 # Packaging #
 #############
