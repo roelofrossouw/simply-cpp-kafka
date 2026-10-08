@@ -16,6 +16,8 @@ config_or_install_package(rdkafka librdkafka-dev librdkafka)
 find_or_fetch_package(modern-cpp-kafka-api
         GIT_REPOSITORY https://github.com/morganstanley/modern-cpp-kafka.git
         GIT_TAG v2023.01.05)
+# Only the demo uses sc-core (sc::demo_servers()); the library doesn't.
+find_or_install_package(sc-core simply-cpp-dev simply-cpp 1.5.2)
 find_library(SC_KAFKA_RDKAFKA_LIBRARY NAMES rdkafka HINTS ${rdkafka_LIBRARY_DIRS} REQUIRED)
 
 ###########
@@ -51,6 +53,11 @@ if (SC_KAFKA_BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests sc-kafka-test)
 endif ()
+
+############
+# Examples #
+############
+add_sc_example(sc-kafka-demo RUN_AS_TEST TIMEOUT 90 LINK_LIBRARIES sc::sc-kafka-shared sc::sc-core)
 
 #############
 # Packaging #
