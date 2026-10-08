@@ -2,9 +2,11 @@
 #define SC_KAFKA_H
 #include <cstdint>
 #include <functional>
+#include <initializer_list>
 #include <set>
 #include <string>
 #include <utility>
+#include <vector>
 
 namespace sc {
     struct kafka_message {
@@ -46,6 +48,9 @@ namespace sc {
         void LogLevel(const int value) { log_level = value; }
 
         void AddTopic(const std::string &topic_name) { topics.emplace(topic_name); }
+        void AddTopic(const std::vector<std::string> &topic_names) { topics.insert(topic_names.begin(), topic_names.end()); }
+        // Keeps AddTopic({"a"}) unambiguous now that a vector is accepted too.
+        void AddTopic(const std::initializer_list<std::string> topic_names) { topics.insert(topic_names); }
 
     private:
         std::string url_;
