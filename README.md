@@ -63,7 +63,7 @@ early when the topics go quiet. Its settings come from the environment:
 
 | Variable | Default |
 |---|---|
-| `SC_KAFKA_DEMO_BROKERS` | `127.0.0.1:9092`; one or more brokers separated by `;` (also used when the value is invalid) |
+| `SC_KAFKA_DEMO_BROKERS` | `127.0.0.1:9092`; one or more brokers separated by `;` (an invalid value is an error) |
 | `SC_KAFKA_DEMO_TOPICS` | required; one or more topics separated by `;` |
 | `SC_KAFKA_DEMO_CLIENT_ID` | `sc-kafka-demo` |
 | `SC_KAFKA_DEMO_GROUP_ID` | `sc-kafka-demo` |

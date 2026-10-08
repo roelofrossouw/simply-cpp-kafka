@@ -1,13 +1,13 @@
 // Consumes a few messages from Kafka and prints a line per message.
 // Brokers come from SC_KAFKA_DEMO_BROKERS: one broker, or several separated by ';'
-// ("kafka1:9092;kafka2:9092"). Unset or invalid falls back to 127.0.0.1:9092.
+// ("kafka1:9092;kafka2:9092"). Unset or empty falls back to 127.0.0.1:9092;
+// an invalid value is an error.
 // Topics come from SC_KAFKA_DEMO_TOPICS, also ';'-separated, and are required.
 // SC_KAFKA_DEMO_CLIENT_ID, SC_KAFKA_DEMO_GROUP_ID and SC_KAFKA_DEMO_MAX_RECORDS default to
 // sc-kafka-demo, sc-kafka-demo and 10. The consumer commits offsets for its group, so give
 // the demo a group of its own rather than one a real consumer uses.
 
 #include <core.h>
-#include <demo_servers.h>
 #include <ip_endpoints.h>
 #include <kafka.h>
 #include <timer.h>
@@ -17,7 +17,7 @@
 
 int main() {
     try {
-        const auto brokers = sc::ip_endpoints{sc::demo_servers("SC_KAFKA_DEMO_BROKERS", 9092)}.to_string(",");
+        const auto brokers = sc::ip_endpoints{sc::getenv("SC_KAFKA_DEMO_BROKERS", "127.0.0.1"), 9092}.to_string(",");
         auto topics = sc::explode(sc::getenv("SC_KAFKA_DEMO_TOPICS"));
         std::erase(topics, "");  // tolerate "a;;b" and a trailing ';'
         if (topics.empty()) {
