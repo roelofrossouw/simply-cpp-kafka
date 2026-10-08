@@ -17,7 +17,7 @@
 
 int main() {
     try {
-        const auto brokers = sc::ip_endpoints{sc::getenv("SC_KAFKA_DEMO_BROKERS", "127.0.0.1"), 9092}.to_string(",");
+        const sc::ip_endpoints brokers{sc::getenv("SC_KAFKA_DEMO_BROKERS", "127.0.0.1"), 9092};
         auto topics = sc::explode(sc::getenv("SC_KAFKA_DEMO_TOPICS"));
         std::erase(topics, "");  // tolerate "a;;b" and a trailing ';'
         if (topics.empty()) {

@@ -39,6 +39,11 @@ consumer.consume([](const sc::kafka_message& message) {
 });
 ```
 
+The constructor takes an `sc::ip_endpoints`: one broker or several separated by
+`;` (`"kafka1;kafka2:9093"`), a `std::vector<sc::ip_endpoint>` or a braced list.
+Brokers without a port use 9092. It throws `std::invalid_argument` for an empty
+list or a `,` in a host, since librdkafka's comma-separated form isn't used here.
+
 `AddTopic()` also takes a `std::vector<std::string>` or a braced list, adding
 every item, e.g. `consumer.AddTopic(sc::explode("topic1;topic2"))` or
 `consumer.AddTopic({"topic1", "topic2"})`. Adding a topic twice has no
