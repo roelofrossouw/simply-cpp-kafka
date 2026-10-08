@@ -1,8 +1,20 @@
 #include <kafka.h>
 #include <sc_test.h>
 
+#include <stdexcept>
+
 int main() {
     sc::kafka consumer{"localhost:9092"};
+
+    SECTION("Brokers");
+    CHECK_EQ(consumer.Brokers().to_string(), "localhost:9092");
+    const sc::kafka several{"kafka1;kafka2:9093;[::1]"};
+    CHECK_EQ(several.Brokers().to_string(","), "kafka1:9092,kafka2:9093,[::1]:9092");
+    const sc::kafka listed{{{"kafka1", 9094}, {"kafka2", 0}}};
+    CHECK_EQ(listed.Brokers().to_string(), "kafka1:9094;kafka2:9092");
+    CHECK_THROWS_AS(sc::kafka{""}, std::invalid_argument);
+    CHECK_THROWS_AS(sc::kafka{"kafka1,kafka2"}, std::invalid_argument);
+    CHECK_THROWS_AS(sc::kafka{"kafka1:nope"}, std::invalid_argument);
 
     SECTION("Default consumer configuration");
     CHECK_EQ(consumer.MaxRecords(), 0);

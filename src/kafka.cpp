@@ -7,6 +7,7 @@
 #include <csignal>
 #include <exception>
 #include <iostream>
+#include <stdexcept>
 
 using namespace kafka;
 using namespace kafka::clients::consumer;
@@ -35,9 +36,16 @@ namespace sc {
         };
     }
 
-    kafka::kafka(const std::string &url) : url_(url),
-                                           client_id("simply-cpp-kafka"),
-                                           group_id("simply-cpp-kafka") {
+    kafka::kafka(ip_endpoints brokers) : brokers_(std::move(brokers)),
+                                         client_id("simply-cpp-kafka"),
+                                         group_id("simply-cpp-kafka") {
+        if (brokers_.empty()) throw std::invalid_argument{"kafka needs at least one broker"};
+        for (auto &broker: brokers_) {
+            if (broker.host.find(',') != std::string::npos) {
+                throw std::invalid_argument{"kafka broker '" + broker.host + "' contains ','; separate brokers with ';'"};
+            }
+            if (broker.port == 0) broker.port = 9092;
+        }
     }
 
     void kafka::consume(const std::function<void(const kafka_message &)> &handler) {
@@ -49,7 +57,7 @@ namespace sc {
         stop_loop = 0;
 
         Properties props;
-        props.put("bootstrap.servers", url_);
+        props.put("bootstrap.servers", brokers_.to_string(","));
         props.put("auto.offset.reset", from_beginning ? "earliest" : "latest");
         props.put("client.id", client_id);
         props.put("group.id", group_id);

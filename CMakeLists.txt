@@ -16,7 +16,7 @@ config_or_install_package(rdkafka librdkafka-dev librdkafka)
 find_or_fetch_package(modern-cpp-kafka-api
         GIT_REPOSITORY https://github.com/morganstanley/modern-cpp-kafka.git
         GIT_TAG v2023.01.05)
-# Only the demo uses sc-core (sc::ip_endpoints, sc::getenv(), sc::explode()); the library doesn't.
+# kafka.h takes its brokers as an sc::ip_endpoints; the demo also uses sc::getenv() and sc::explode().
 find_or_install_package(sc-core simply-cpp-dev simply-cpp 1.5.5)
 find_library(SC_KAFKA_RDKAFKA_LIBRARY NAMES rdkafka HINTS ${rdkafka_LIBRARY_DIRS} REQUIRED)
 
@@ -28,7 +28,7 @@ set(SOURCE_LIBRARIES)
 set(SOURCE_LINK_LIBRARIES)
 
 add_sc_object(kafka LINK_LIBRARIES modern-cpp-kafka-api
-        PUBLIC_LINK_LIBRARIES ${SC_KAFKA_RDKAFKA_LIBRARY})
+        PUBLIC_LINK_LIBRARIES sc::sc-core ${SC_KAFKA_RDKAFKA_LIBRARY})
 
 ######################
 # Exported Libraries #
@@ -57,9 +57,9 @@ endif ()
 ############
 # Examples #
 ############
-add_sc_example(sc-kafka-demo RUN_AS_TEST TIMEOUT 90 LINK_LIBRARIES sc::sc-kafka-shared sc::sc-core)
+add_sc_example(sc-kafka-demo RUN_AS_TEST TIMEOUT 90)
 
 #############
 # Packaging #
 #############
-package_sc_module(DEPENDS librdkafka++1)
+package_sc_module(DEPENDS librdkafka++1 DEV_DEPENDS "simply-cpp-dev (>= 1.5.5)")

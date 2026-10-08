@@ -1,5 +1,7 @@
 #ifndef SC_KAFKA_H
 #define SC_KAFKA_H
+#include <ip_endpoints.h>
+
 #include <cstdint>
 #include <functional>
 #include <initializer_list>
@@ -18,7 +20,12 @@ namespace sc {
 
     class kafka {
     public:
-        explicit kafka(const std::string &url);
+        // One or more brokers: "kafka1;kafka2:9093", a std::vector<ip_endpoint> or a braced list.
+        // Entries without a port use 9092. Throws std::invalid_argument for an empty list or a
+        // ',' in a host (separate brokers with ';', not librdkafka's ',').
+        explicit kafka(ip_endpoints brokers);
+
+        [[nodiscard]] const ip_endpoints &Brokers() const { return brokers_; }
 
 
         void consume(const std::function<void(const kafka_message &)> &handler);
@@ -53,7 +60,7 @@ namespace sc {
         void AddTopic(const std::initializer_list<std::string> topic_names) { topics.insert(topic_names); }
 
     private:
-        std::string url_;
+        ip_endpoints brokers_;
         int max_records = 0;
         bool from_beginning = false;
         int poll = 200;
