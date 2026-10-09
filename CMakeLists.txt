@@ -18,6 +18,10 @@ find_or_fetch_package(modern-cpp-kafka-api
         GIT_TAG v2023.01.05)
 # kafka.h takes its brokers as an sc::ip_endpoints; the demo also uses sc::getenv() and sc::explode().
 find_or_install_package(sc-core simply-cpp-dev simply-cpp 1.5.11)
+# A Homebrew upgrade removes the version folder a cached path points into: look again then.
+if (SC_KAFKA_RDKAFKA_LIBRARY AND NOT EXISTS "${SC_KAFKA_RDKAFKA_LIBRARY}")
+    unset(SC_KAFKA_RDKAFKA_LIBRARY CACHE)
+endif ()
 find_library(SC_KAFKA_RDKAFKA_LIBRARY NAMES rdkafka HINTS ${rdkafka_LIBRARY_DIRS} REQUIRED)
 
 ###########
