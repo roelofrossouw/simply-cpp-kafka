@@ -7,15 +7,12 @@
 //                            so give the demo a group of its own, not one a real consumer uses
 //   SC_KAFKA_DEMO_MAX_RECORDS  default 10
 
-#include <console.h>
-#include <core.h>
-#include <datetime.h>
-#include <ip_endpoints.h>
-#include <kafka.h>
-#include <timer.h>
-
 #include <iostream>
 #include <string>
+
+#include <sc.h>
+
+#include <kafka.h>
 
 
 int main() {
