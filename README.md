@@ -55,8 +55,10 @@ Set `ClientId()` and `GroupId()` for each deployed consumer; both default to
 
 ## Demo
 
-`sc-kafka-demo` is installed with the runtime package (`simply-cpp-kafka`), so
-you can check a machine can consume from Kafka without the `-dev` package:
+`sc-kafka-demo` consumes a few messages and prints a line for each (time, topic,
+key, size), then a summary. It is installed with the runtime package
+(`simply-cpp-kafka`), so it also checks a machine can consume from Kafka without
+the `-dev` package. It is a demonstration, not a test, so CTest doesn't run it:
 
 ```bash
 SC_KAFKA_DEMO_TOPICS="topic1;topic2" SC_KAFKA_DEMO_GROUP_ID=my-demo-group sc-kafka-demo
@@ -76,28 +78,27 @@ early when the topics go quiet. Its settings come from the environment:
 
 Quote values containing `;` in a shell. The consumer commits offsets for its
 group, so don't point `SC_KAFKA_DEMO_GROUP_ID` at a group a real consumer uses:
-the demo would take its partitions and the messages it reads. The
-`example-sc-kafka-demo` CTest uses the same variables, which build servers get
-from `/etc/simply-cpp/test.env`.
+the demo would take its partitions and the messages it reads. Build servers have these
+variables in `/etc/simply-cpp/test.env`, for running it there by hand.
 
 Its source is `examples/sc-kafka-demo.cpp`; the code below is copied from it at
 configure time, so it always matches code that compiles:
 
 <!-- sc-example: examples/sc-kafka-demo.cpp -->
 ```cpp
-sc::timer sw;
 sc::kafka consumer{brokers};
 consumer.ClientId(client_id);
 consumer.GroupId(group_id);
 consumer.MaxRecords(max_records);
 consumer.AddTopic(topics);
 
+heading("Messages, from where this group left off");
 int received = 0;
 consumer.consume([&](const sc::kafka_message &message) {
-    ++received;
-    std::cout << message.topic << " key=" << message.key << " created=" << message.created
-            << " (" << message.data.size() << " bytes)\n";
+    if (++received > max_records) return; // the rest of the last batch, counted below
+    const auto created = sc::datetime::from_unix(message.created / 1000);
+    std::cout << "  " << created.format("%H:%M:%S") << "  " << message.topic << "  key " << message.key
+              << "  (" << message.data.size() << " bytes)\n";
 });
-std::cout << "Received " << received << " messages after " << sw << '\n';
 ```
 <!-- /sc-example -->
