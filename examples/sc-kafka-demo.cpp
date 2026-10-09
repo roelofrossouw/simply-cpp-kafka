@@ -7,6 +7,7 @@
 //                            so give the demo a group of its own, not one a real consumer uses
 //   SC_KAFKA_DEMO_MAX_RECORDS  default 10
 
+#include <console.h>
 #include <core.h>
 #include <datetime.h>
 #include <ip_endpoints.h>
@@ -15,11 +16,7 @@
 
 #include <iostream>
 #include <string>
-#include <string_view>
 
-namespace {
-    void heading(const std::string_view title) { std::cout << '\n' << title << '\n'; }
-}
 
 int main() {
     try {
@@ -34,11 +31,11 @@ int main() {
         const auto group_id = sc::getenv("SC_KAFKA_DEMO_GROUP_ID", "sc-kafka-demo");
         const auto max_records = std::stoi(sc::getenv("SC_KAFKA_DEMO_MAX_RECORDS", "10"));
 
-        std::cout << "simply-cpp kafka: consuming a few messages\n"
-                  << "  brokers  " << brokers << "  (SC_KAFKA_DEMO_BROKERS)\n"
-                  << "  topics   " << sc::getenv("SC_KAFKA_DEMO_TOPICS") << "  (SC_KAFKA_DEMO_TOPICS)\n"
-                  << "  group    " << group_id << ", client " << client_id << '\n'
-                  << "  stopping after " << max_records << " messages, or when the topics go quiet\n";
+        sc::console::title("simply-cpp kafka: consuming a few messages");
+        sc::console::note("brokers  " + brokers.to_string() + "  (SC_KAFKA_DEMO_BROKERS)");
+        sc::console::note("topics   " + sc::getenv("SC_KAFKA_DEMO_TOPICS") + "  (SC_KAFKA_DEMO_TOPICS)");
+        sc::console::note("group    " + group_id + ", client " + client_id);
+        sc::console::note("stopping after " + std::to_string(max_records) + " messages, or when the topics go quiet");
         sc::timer sw;
 
         // [readme]
@@ -48,22 +45,22 @@ int main() {
         consumer.MaxRecords(max_records);
         consumer.AddTopic(topics);
 
-        heading("Messages, from where this group left off");
+        sc::console::heading("Messages, from where this group left off");
         int received = 0;
         consumer.consume([&](const sc::kafka_message &message) {
             if (++received > max_records) return; // the rest of the last batch, counted below
             const auto created = sc::datetime::from_unix(message.created / 1000);
-            std::cout << "  " << created.format("%H:%M:%S") << "  " << message.topic << "  key " << message.key
-                      << "  (" << message.data.size() << " bytes)\n";
+            sc::console::note(created.format("%H:%M:%S") + "  " + message.topic + "  key " + message.key + "  (" +
+                              std::to_string(message.data.size()) + " bytes)");
         });
         // [/readme]
 
-        heading("Summary");
-        std::cout << "  " << received << (received == 1 ? " message" : " messages") << " in " << sw << '\n';
+        sc::console::heading("Summary");
+        sc::console::note(std::to_string(received) + (received == 1 ? " message" : " messages") + " in " + std::string(sw));
         if (received > max_records) {
             // MaxRecords is checked between batches, and the whole batch is committed.
-            std::cout << "  (the last batch brought " << received - max_records << " more than the "
-                      << max_records << " shown)\n";
+            sc::console::note("(the last batch brought " + std::to_string(received - max_records) + " more than the " +
+                              std::to_string(max_records) + " shown)");
         }
     } catch (const std::exception &error) {
         std::cerr << "sc-kafka-demo: " << error.what() << '\n';

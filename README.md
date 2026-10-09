@@ -92,13 +92,13 @@ consumer.GroupId(group_id);
 consumer.MaxRecords(max_records);
 consumer.AddTopic(topics);
 
-heading("Messages, from where this group left off");
+sc::console::heading("Messages, from where this group left off");
 int received = 0;
 consumer.consume([&](const sc::kafka_message &message) {
     if (++received > max_records) return; // the rest of the last batch, counted below
     const auto created = sc::datetime::from_unix(message.created / 1000);
-    std::cout << "  " << created.format("%H:%M:%S") << "  " << message.topic << "  key " << message.key
-              << "  (" << message.data.size() << " bytes)\n";
+    sc::console::note(created.format("%H:%M:%S") + "  " + message.topic + "  key " + message.key + "  (" +
+                      std::to_string(message.data.size()) + " bytes)");
 });
 ```
 <!-- /sc-example -->
