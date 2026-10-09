@@ -17,7 +17,7 @@ find_or_fetch_package(modern-cpp-kafka-api
         GIT_REPOSITORY https://github.com/morganstanley/modern-cpp-kafka.git
         GIT_TAG v2023.01.05)
 # kafka.h takes its brokers as an sc::ip_endpoints; the demo also uses sc::getenv() and sc::explode().
-find_or_install_package(sc-core simply-cpp-dev simply-cpp 1.5.7)
+find_or_install_package(sc-core simply-cpp-dev simply-cpp 1.5.11)
 find_library(SC_KAFKA_RDKAFKA_LIBRARY NAMES rdkafka HINTS ${rdkafka_LIBRARY_DIRS} REQUIRED)
 
 ###########
