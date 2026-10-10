@@ -3,6 +3,8 @@
 C++20 consumer wrapper for Apache Kafka, built on
 [modern-cpp-kafka](https://github.com/morganstanley/modern-cpp-kafka).
 
+**Documentation:** the [simply-cpp wiki](https://github.com/roelofrossouw/simply-cpp/wiki) has a [Kafka guide](https://github.com/roelofrossouw/simply-cpp/wiki/Kafka) and the [sc-kafka reference](https://github.com/roelofrossouw/simply-cpp/wiki/Reference-sc-kafka), plus [getting started](https://github.com/roelofrossouw/simply-cpp/wiki/Getting-Started) for the whole suite.
+
 ## Install
 
 ### apt (Ubuntu)
