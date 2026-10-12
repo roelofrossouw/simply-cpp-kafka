@@ -28,7 +28,14 @@ namespace sc {
         [[nodiscard]] const ip_endpoints &Brokers() const { return brokers_; }
 
 
+        // Polls the topics and calls handler for each message, committing after each batch, until
+        // MaxRecords() messages (when not 0), the topics stay quiet for PollAtEnd() (when it is 0
+        // or less), SIGINT/SIGTERM, or stop(). Several kafka objects may consume at once, each on
+        // its own thread; a signal or stop() ends them all.
         void consume(const std::function<void(const kafka_message &)> &handler);
+
+        // Asks every consume() running in the process to finish after its current batch.
+        static void stop();
 
         [[nodiscard]] int MaxRecords() const { return max_records; }
         void MaxRecords(const int value) { max_records = value; }

@@ -1,7 +1,12 @@
 #include <kafka.h>
 #include <sc_test.h>
 
+#include <atomic>
+#include <chrono>
+#include <csignal>
 #include <stdexcept>
+#include <thread>
+#include <vector>
 
 int main() {
     sc::kafka consumer{"localhost:9092"};
@@ -60,6 +65,34 @@ int main() {
     topics.AddTopic({"four"});
     topics.AddTopic({"five", "six"});
     CHECK_NOTHROW(topics.AddTopic("one"));
+
+    SECTION("Consumers on their own threads share the signal handling");
+    {
+        // No broker answers on port 1, so each consume() ends when subscribe() times out (about
+        // 30 seconds). While they wait, SIGTERM (systemctl stop) must be caught - asking them all
+        // to stop - not the default kill; once the last has finished, the default is back.
+        std::vector<std::thread> threads;
+        std::atomic<int> finished{0};
+        for (const auto *topic: {"first", "second"}) {
+            threads.emplace_back([topic, &finished] {
+                sc::kafka quiet{"127.0.0.1:1"};
+                quiet.AddTopic(topic);
+                try {
+                    quiet.consume([](const sc::kafka_message &) {});
+                } catch (const std::exception &) {
+                    // the subscription timing out
+                }
+                ++finished;
+            });
+        }
+        std::this_thread::sleep_for(std::chrono::seconds{2});
+        std::raise(SIGTERM); // still running afterwards: the consumers' handler took it
+        sc::kafka::stop();
+        for (auto &thread: threads) thread.join();
+        CHECK_EQ(finished.load(), 2);
+        const auto handler = std::signal(SIGTERM, SIG_DFL);
+        CHECK(handler == SIG_DFL);
+    }
 
     TEST_SUMMARY();
 }
