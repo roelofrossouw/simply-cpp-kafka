@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 set(SC_MODULE kafka)
-project(simply-cpp-${SC_MODULE} LANGUAGES CXX)
+project(simply-cpp-${SC_MODULE} HOMEPAGE_URL "https://github.com/roelofrossouw/simply-cpp-kafka" LANGUAGES CXX)
 include(cmake/sc_bootstrap.cmake)
 
 # Options:
@@ -17,7 +17,7 @@ find_or_fetch_package(modern-cpp-kafka-api
         GIT_REPOSITORY https://github.com/morganstanley/modern-cpp-kafka.git
         GIT_TAG v2023.01.05)
 # kafka.h takes its brokers as an sc::ip_endpoints; the demo also uses sc::getenv() and sc::explode().
-find_or_install_package(sc-core simply-cpp-dev simply-cpp 1.5.21)
+find_or_install_package(sc-core simply-cpp-dev simply-cpp 1.7.0)
 # A Homebrew upgrade removes the version folder a cached path points into: look again then.
 if (SC_KAFKA_RDKAFKA_LIBRARY AND NOT EXISTS "${SC_KAFKA_RDKAFKA_LIBRARY}")
     unset(SC_KAFKA_RDKAFKA_LIBRARY CACHE)
@@ -63,4 +63,4 @@ add_sc_example(sc-kafka-demo)
 #############
 # Packaging #
 #############
-package_sc_module(DEPENDS librdkafka++1 DEV_DEPENDS "simply-cpp-dev (>= 1.5.21~)")
+package_sc_module(DEPENDS librdkafka++1 DEV_DEPENDS "simply-cpp-dev (>= 1.7.0~)")
