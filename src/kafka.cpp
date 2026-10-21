@@ -1,6 +1,5 @@
 #include "kafka.h"
 
-#include <kafka/AdminClient.h>
 #include <kafka/KafkaConsumer.h>
 
 #include <atomic>
@@ -57,16 +56,7 @@ namespace {
 
 namespace sc {
     namespace {
-        struct kafka_buffer {
-            std::string str;
-
-            explicit kafka_buffer(const ConstBuffer data) : str(static_cast<const char *>(data.data()), data.size()) {
-            }
-
-            operator std::string() const {
-                return str;
-            }
-        };
+        std::string text(const ConstBuffer data) { return {static_cast<const char *>(data.data()), data.size()}; }
     }
 
     kafka::kafka(ip_endpoints brokers) : brokers_(std::move(brokers)),
@@ -113,16 +103,10 @@ namespace sc {
                     std::cerr << "Message error: " << record.topic() << std::endl;
                 } else {
 #ifndef NDEBUG
-                    if (const auto header_size = record.headers().size()) {
-                        for (int i = 0; i < header_size; ++i) {
-                            std::cout << record.headers()[i].key << ": " << record.headers()[i].value.toString();
-                        }
-                    }
+                    for (const auto &header: record.headers()) std::cout << header.key << ": " << header.value.toString() << '\n';
 #endif
-                    const kafka_buffer key{record.key()};
-                    const kafka_buffer value{record.value()};
                     try {
-                        handler({record.topic(), key, record.timestamp().msSinceEpoch, value});
+                        handler({record.topic(), text(record.key()), record.timestamp().msSinceEpoch, text(record.value())});
                     } catch (const std::exception &error) {
                         std::cerr << "Handler error: " << error.what() << std::endl;
                     }
