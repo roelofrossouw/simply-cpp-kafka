@@ -2,8 +2,11 @@
 #define SC_KAFKA_H
 #include <ip_endpoints.h>
 
+#include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <initializer_list>
 #include <set>
 #include <string>
@@ -77,6 +80,38 @@ namespace sc {
         bool auto_commit = false;
         int log_level = 3;
         std::set<std::string> topics{};
+    };
+
+    // Sends messages to Kafka. send() queues a message and returns at once; it goes out in the
+    // background, in batches. A delivery that fails later (no broker, or not delivered within 30
+    // seconds) is counted in failed() and reported to std::cerr. The destructor waits up to 10
+    // seconds for what is still queued, then drops it. Safe to share between threads.
+    class kafka_producer {
+    public:
+        // Brokers as for sc::kafka (9092 without a port; separate them with ';').
+        explicit kafka_producer(ip_endpoints brokers, std::string client_id = "simply-cpp-kafka");
+        ~kafka_producer();
+
+        kafka_producer(const kafka_producer &) = delete;
+        kafka_producer &operator=(const kafka_producer &) = delete;
+
+        // Throws std::runtime_error when Kafka refuses it at once: a full queue, or a topic the
+        // broker doesn't have and won't create.
+        void send(const std::string &topic, const std::string &key, const std::string &value);
+
+        // Waits until every message sent so far is delivered or has failed; false on timeout.
+        bool flush(std::chrono::milliseconds timeout = std::chrono::seconds{10});
+
+        [[nodiscard]] std::uint64_t delivered() const { return delivered_->load(); }
+        [[nodiscard]] std::uint64_t failed() const { return failed_->load(); }
+        [[nodiscard]] const ip_endpoints &Brokers() const { return brokers_; }
+
+    private:
+        class implementation;
+        ip_endpoints brokers_;
+        std::shared_ptr<std::atomic<std::uint64_t>> delivered_ = std::make_shared<std::atomic<std::uint64_t>>(0);
+        std::shared_ptr<std::atomic<std::uint64_t>> failed_ = std::make_shared<std::atomic<std::uint64_t>>(0);
+        std::unique_ptr<implementation> implementation_;
     };
 } // sc
 
