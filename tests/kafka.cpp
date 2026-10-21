@@ -4,6 +4,8 @@
 #include <atomic>
 #include <chrono>
 #include <csignal>
+#include <cstdlib>
+#include <iostream>
 #include <stdexcept>
 #include <thread>
 #include <vector>
@@ -92,6 +94,58 @@ int main() {
         CHECK_EQ(finished.load(), 2);
         const auto handler = std::signal(SIGTERM, SIG_DFL);
         CHECK(handler == SIG_DFL);
+    }
+
+    SECTION("A producer checks its brokers as a consumer does");
+    {
+        CHECK_THROWS_AS(sc::kafka_producer{""}, std::invalid_argument);
+        CHECK_THROWS_AS(sc::kafka_producer{"kafka1,kafka2"}, std::invalid_argument);
+        const sc::kafka_producer producer{"kafka1;kafka2:9093"};
+        CHECK_EQ(producer.Brokers().to_string(), "kafka1:9092;kafka2:9093");
+    }
+
+    SECTION("A producer with no broker: send() queues, flush() times out, nothing is delivered");
+    {
+        sc::kafka_producer producer{"127.0.0.1:1", "sc-kafka-test"};
+        CHECK_NOTHROW(producer.send("nowhere", "key", "value"));
+        CHECK(!producer.flush(std::chrono::milliseconds{500}));
+        CHECK_EQ(producer.delivered(), std::uint64_t{0});
+    }
+
+    // Against the real broker, only with a topic to write to (SC_KAFKA_TEST_TOPIC): what is sent
+    // comes back to a consumer, key and value as they were.
+    if (const char *topic = std::getenv("SC_KAFKA_TEST_TOPIC"); topic && *topic) {
+        SECTION("Produced, then consumed");
+        const char *brokers = std::getenv("SC_KAFKA_DEMO_BROKERS");
+        const std::string key = "sc-kafka-test-" + std::to_string(std::chrono::system_clock::now().time_since_epoch().count());
+        {
+            sc::kafka_producer producer{brokers ? brokers : "localhost:9092", "sc-kafka-test"};
+            producer.send(topic, key, R"({"hello":"kafka"})");
+            CHECK(producer.flush(std::chrono::seconds{15}));
+            CHECK_EQ(producer.delivered(), std::uint64_t{1});
+            CHECK_EQ(producer.failed(), std::uint64_t{0});
+        }
+        sc::kafka consumer{brokers ? brokers : "localhost:9092"};
+        consumer.GroupId("sc-kafka-test-" + key);
+        consumer.FromBeginning(true);
+        consumer.AddTopic(topic);
+        // consume() keeps polling (a new group's first polls are empty until its partitions are
+        // assigned): stop it once the message is back, or after a minute.
+        std::atomic<bool> found{false};
+        std::thread deadline{[&found] {
+            for (int i = 0; i < 600 && !found; ++i) std::this_thread::sleep_for(std::chrono::milliseconds{100});
+            sc::kafka::stop();
+        }};
+        consumer.consume([&](const sc::kafka_message &message) {
+            if (message.key == key && message.data == R"({"hello":"kafka"})") {
+                found = true;
+                sc::kafka::stop();
+            }
+        });
+        deadline.join();
+        CHECK(found.load());
+    } else {
+        std::cout << "   (SC_KAFKA_TEST_TOPIC isn't set: no round trip through the broker)" << std::endl;
     }
 
     TEST_SUMMARY();

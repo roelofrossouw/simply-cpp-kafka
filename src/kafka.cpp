@@ -1,6 +1,7 @@
 #include "kafka.h"
 
 #include <kafka/KafkaConsumer.h>
+#include <kafka/KafkaProducer.h>
 
 #include <atomic>
 #include <chrono>
@@ -12,6 +13,8 @@
 
 using namespace kafka;
 using namespace kafka::clients::consumer;
+using kafka::clients::producer::KafkaProducer;
+using kafka::clients::producer::ProducerRecord;
 
 using ms = std::chrono::milliseconds;
 
@@ -59,16 +62,22 @@ namespace sc {
         std::string text(const ConstBuffer data) { return {static_cast<const char *>(data.data()), data.size()}; }
     }
 
-    kafka::kafka(ip_endpoints brokers) : brokers_(std::move(brokers)),
+    namespace {
+        ip_endpoints checked_brokers(ip_endpoints brokers) {
+            if (brokers.empty()) throw std::invalid_argument{"kafka needs at least one broker"};
+            for (auto &broker: brokers) {
+                if (broker.host.find(',') != std::string::npos) {
+                    throw std::invalid_argument{"kafka broker '" + broker.host + "' contains ','; separate brokers with ';'"};
+                }
+                if (broker.port == 0) broker.port = 9092;
+            }
+            return brokers;
+        }
+    }
+
+    kafka::kafka(ip_endpoints brokers) : brokers_(checked_brokers(std::move(brokers))),
                                          client_id("simply-cpp-kafka"),
                                          group_id("simply-cpp-kafka") {
-        if (brokers_.empty()) throw std::invalid_argument{"kafka needs at least one broker"};
-        for (auto &broker: brokers_) {
-            if (broker.host.find(',') != std::string::npos) {
-                throw std::invalid_argument{"kafka broker '" + broker.host + "' contains ','; separate brokers with ';'"};
-            }
-            if (broker.port == 0) broker.port = 9092;
-        }
     }
 
     void kafka::consume(const std::function<void(const kafka_message &)> &handler) {
@@ -122,5 +131,59 @@ namespace sc {
 
     void kafka::stop() {
         stop_loop.store(true, std::memory_order_relaxed);
+    }
+
+    class kafka_producer::implementation {
+    public:
+        implementation(const ip_endpoints &brokers, const std::string &client_id)
+            : producer_(properties(brokers, client_id)) {
+        }
+
+        KafkaProducer producer_;
+
+    private:
+        static Properties properties(const ip_endpoints &brokers, const std::string &client_id) {
+            Properties props;
+            props.put("bootstrap.servers", brokers.to_string(","));
+            props.put("client.id", client_id);
+            props.put("linger.ms", "5");             // small batches: positions and alarms should go out at once
+            props.put("enable.idempotence", "true"); // no duplicates from the producer's own retries
+            props.put("message.timeout.ms", "30000"); // not librdkafka's 5 minutes: late data is stale data
+            return props;
+        }
+    };
+
+    kafka_producer::kafka_producer(ip_endpoints brokers, std::string client_id)
+        : brokers_(checked_brokers(std::move(brokers))),
+          implementation_(std::make_unique<implementation>(brokers_, client_id)) {
+    }
+
+    kafka_producer::~kafka_producer() {
+        if (!flush(std::chrono::seconds{10})) std::cerr << "Kafka: messages still queued at shutdown were dropped" << std::endl;
+        implementation_->producer_.close(std::chrono::milliseconds{0}); // purges what's left, rather than waiting for it
+    }
+
+    void kafka_producer::send(const std::string &topic, const std::string &key, const std::string &value) {
+        const ProducerRecord record{topic, Key{key.data(), key.size()}, Value{value.data(), value.size()}};
+        try {
+            implementation_->producer_.send(
+                record,
+                [delivered = delivered_, failed = failed_, topic](const ::kafka::clients::producer::RecordMetadata &,
+                                                                  const Error &error) {
+                    if (error) {
+                        ++*failed;
+                        std::cerr << "Kafka: delivery to " << topic << " failed: " << error.message() << std::endl;
+                    } else {
+                        ++*delivered;
+                    }
+                },
+                KafkaProducer::SendOption::ToCopyRecordValue, KafkaProducer::ActionWhileQueueIsFull::NoBlock);
+        } catch (const KafkaException &error) {
+            throw std::runtime_error("Kafka: can't send to " + topic + ": " + error.what());
+        }
+    }
+
+    bool kafka_producer::flush(const std::chrono::milliseconds timeout) {
+        return !implementation_->producer_.flush(timeout);
     }
 } // namespace sc

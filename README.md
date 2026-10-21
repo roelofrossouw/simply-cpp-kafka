@@ -104,3 +104,21 @@ consumer.consume([&](const sc::kafka_message &message) {
 });
 ```
 <!-- /sc-example -->
+
+## Producing
+
+`sc::kafka_producer` sends messages: `send(topic, key, value)` queues one and
+returns at once; it goes out in the background, in small batches. A delivery
+that fails later (no broker, or not delivered within 30 seconds) is counted in
+`failed()` and reported to std::cerr; `delivered()` counts the rest.
+`flush(timeout)` waits for everything sent so far. The destructor waits up to
+10 seconds for what is still queued, then drops it. One producer can be shared
+by threads.
+
+```cpp
+sc::kafka_producer producer{"kafka1:9092;kafka2:9092", "twc-poller"};
+producer.send("ta_twc_topic", imei, record.dump());
+```
+
+`send()` throws std::runtime_error when Kafka refuses a message at once: a full
+queue, or a topic the broker doesn't have and won't create.
