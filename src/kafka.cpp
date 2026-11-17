@@ -1,4 +1,4 @@
-#include "kafka.h"
+#include <sc/kafka/kafka.h>
 
 #include <kafka/KafkaConsumer.h>
 #include <kafka/KafkaProducer.h>

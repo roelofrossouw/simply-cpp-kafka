@@ -10,9 +10,9 @@
 #include <iostream>
 #include <string>
 
-#include <sc.h>
+#include <sc/core/sc.h>
 
-#include <kafka.h>
+#include <sc/kafka/kafka.h>
 
 
 int main() {

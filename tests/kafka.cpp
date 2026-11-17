@@ -1,4 +1,4 @@
-#include <kafka.h>
+#include <sc/kafka/kafka.h>
 #include <sc_test.h>
 
 #include <atomic>

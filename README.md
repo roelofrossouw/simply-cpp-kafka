@@ -26,7 +26,7 @@ target_link_libraries(consumer PRIVATE sc::sc-kafka-shared)
 ## Usage
 
 ```cpp
-#include <kafka.h>
+#include <sc/kafka/kafka.h>
 
 sc::kafka consumer{"broker.example:9092"};
 consumer.ClientId("vehicle-consumer");

@@ -1,6 +1,6 @@
 #ifndef SC_KAFKA_H
 #define SC_KAFKA_H
-#include <ip_endpoints.h>
+#include <sc/core/ip_endpoints.h>
 
 #include <atomic>
 #include <chrono>
