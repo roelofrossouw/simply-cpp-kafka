@@ -17,7 +17,7 @@ find_or_fetch_package(modern-cpp-kafka-api
         GIT_REPOSITORY https://github.com/morganstanley/modern-cpp-kafka.git
         GIT_TAG v2023.01.05)
 # kafka.h takes its brokers as an sc::ip_endpoints; the demo also uses sc::getenv() and sc::explode().
-find_or_install_package(sc-core simply-cpp-dev simply-cpp 2.2.0)
+find_or_install_package(sc-core simply-cpp-dev simply-cpp 3.0.0)
 # A Homebrew upgrade removes the version folder a cached path points into: look again then.
 if (SC_KAFKA_RDKAFKA_LIBRARY AND NOT EXISTS "${SC_KAFKA_RDKAFKA_LIBRARY}")
     unset(SC_KAFKA_RDKAFKA_LIBRARY CACHE)
@@ -64,4 +64,4 @@ add_sc_example(sc-kafka-demo)
 # Packaging #
 #############
 # librdkafka1 (the C library it links) comes from shlibdeps; nothing from modern-cpp-kafka (headers only) is needed at run time
-package_sc_module(DEV_DEPENDS "simply-cpp-dev (>= 1.20.0~)")
+package_sc_module(DEV_DEPENDS "simply-cpp-dev (>= 3.0.0~)")
