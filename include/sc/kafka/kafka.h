@@ -1,6 +1,7 @@
 #ifndef SC_KAFKA_H
 #define SC_KAFKA_H
 #include <sc/core/ip_endpoints.h>
+#include <sc/core/log_level.h>
 
 #include <atomic>
 #include <chrono>
@@ -28,58 +29,59 @@ namespace sc {
         // ',' in a host (separate brokers with ';', not librdkafka's ',').
         explicit kafka(ip_endpoints brokers);
 
-        [[nodiscard]] const ip_endpoints &Brokers() const { return brokers_; }
+        [[nodiscard]] const ip_endpoints &brokers() const { return brokers_; }
 
 
         // Polls the topics and calls handler for each message, committing after each batch, until
-        // MaxRecords() messages (when not 0), the topics stay quiet for PollAtEnd() (when it is 0
-        // or less), SIGINT/SIGTERM, or stop(). Several kafka objects may consume at once, each on
+        // max_records() messages (when not 0), the topics stay quiet for poll_at_end() (when it is
+        // 0 or less), SIGINT/SIGTERM, or stop(). Several kafka objects may consume at once, each on
         // its own thread; a signal or stop() ends them all.
         void consume(const std::function<void(const kafka_message &)> &handler);
 
         // Asks every consume() running in the process to finish after its current batch.
         static void stop();
 
-        [[nodiscard]] int MaxRecords() const { return max_records; }
-        void MaxRecords(const int value) { max_records = value; }
+        [[nodiscard]] int max_records() const { return max_records_; }
+        void max_records(const int value) { max_records_ = value; }
 
-        [[nodiscard]] bool FromBeginning() const { return from_beginning; }
-        void FromBeginning(const bool value) { from_beginning = value; }
+        [[nodiscard]] bool from_beginning() const { return from_beginning_; }
+        void from_beginning(const bool value) { from_beginning_ = value; }
 
-        [[nodiscard]] int Poll() const { return poll; }
-        void Poll(const int value) { poll = value; }
+        [[nodiscard]] std::chrono::milliseconds poll() const { return poll_; }
+        void poll(const std::chrono::milliseconds value) { poll_ = value; }
 
-        [[nodiscard]] int PollAtEnd() const { return poll_at_end; }
-        void PollAtEnd(const int value) { poll_at_end = value; }
+        [[nodiscard]] std::chrono::milliseconds poll_at_end() const { return poll_at_end_; }
+        void poll_at_end(const std::chrono::milliseconds value) { poll_at_end_ = value; }
 
-        [[nodiscard]] const std::string &ClientId() const { return client_id; }
-        void ClientId(std::string value) { client_id = std::move(value); }
+        [[nodiscard]] const std::string &client_id() const { return client_id_; }
+        void client_id(std::string value) { client_id_ = std::move(value); }
 
-        [[nodiscard]] const std::string &GroupId() const { return group_id; }
-        void GroupId(std::string value) { group_id = std::move(value); }
+        [[nodiscard]] const std::string &group_id() const { return group_id_; }
+        void group_id(std::string value) { group_id_ = std::move(value); }
 
-        [[nodiscard]] bool AutoCommit() const { return auto_commit; }
-        void AutoCommit(const bool value) { auto_commit = value; }
+        [[nodiscard]] bool auto_commit() const { return auto_commit_; }
+        void auto_commit(const bool value) { auto_commit_ = value; }
 
-        [[nodiscard]] int LogLevel() const { return log_level; }
-        void LogLevel(const int value) { log_level = value; }
+        // librdkafka's own messages, as syslog levels (sc::log_level::error by default).
+        [[nodiscard]] sc::log_level log_level() const { return log_level_; }
+        void log_level(const sc::log_level value) { log_level_ = value; }
 
-        void AddTopic(const std::string &topic_name) { topics.emplace(topic_name); }
-        void AddTopic(const std::vector<std::string> &topic_names) { topics.insert(topic_names.begin(), topic_names.end()); }
-        // Keeps AddTopic({"a"}) unambiguous now that a vector is accepted too.
-        void AddTopic(const std::initializer_list<std::string> topic_names) { topics.insert(topic_names); }
+        void add_topic(const std::string &topic_name) { topics_.emplace(topic_name); }
+        void add_topic(const std::vector<std::string> &topic_names) { topics_.insert(topic_names.begin(), topic_names.end()); }
+        // Keeps add_topic({"a"}) unambiguous now that a vector is accepted too.
+        void add_topic(const std::initializer_list<std::string> topic_names) { topics_.insert(topic_names); }
 
     private:
         ip_endpoints brokers_;
-        int max_records = 0;
-        bool from_beginning = false;
-        int poll = 200;
-        int poll_at_end = 5000;
-        std::string client_id;
-        std::string group_id;
-        bool auto_commit = false;
-        int log_level = 3;
-        std::set<std::string> topics{};
+        int max_records_ = 0;
+        bool from_beginning_ = false;
+        std::chrono::milliseconds poll_{200};
+        std::chrono::milliseconds poll_at_end_{5000};
+        std::string client_id_;
+        std::string group_id_;
+        bool auto_commit_ = false;
+        sc::log_level log_level_ = sc::log_level::error;
+        std::set<std::string> topics_{};
     };
 
     // Sends messages to Kafka. send() queues a message and returns at once; it goes out in the
@@ -104,7 +106,7 @@ namespace sc {
 
         [[nodiscard]] std::uint64_t delivered() const { return delivered_->load(); }
         [[nodiscard]] std::uint64_t failed() const { return failed_->load(); }
-        [[nodiscard]] const ip_endpoints &Brokers() const { return brokers_; }
+        [[nodiscard]] const ip_endpoints &brokers() const { return brokers_; }
 
     private:
         class implementation;

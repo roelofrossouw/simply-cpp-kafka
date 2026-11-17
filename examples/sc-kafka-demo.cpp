@@ -37,10 +37,10 @@ int main() {
 
         // [readme]
         sc::kafka consumer{brokers};
-        consumer.ClientId(client_id);
-        consumer.GroupId(group_id);
-        consumer.MaxRecords(max_records);
-        consumer.AddTopic(topics);
+        consumer.client_id(client_id);
+        consumer.group_id(group_id);
+        consumer.max_records(max_records);
+        consumer.add_topic(topics);
 
         sc::console::heading("Messages, from where this group left off");
         int received = 0;

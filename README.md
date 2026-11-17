@@ -29,12 +29,12 @@ target_link_libraries(consumer PRIVATE sc::sc-kafka-shared)
 #include <sc/kafka/kafka.h>
 
 sc::kafka consumer{"broker.example:9092"};
-consumer.ClientId("vehicle-consumer");
-consumer.GroupId("vehicle-consumers");
-consumer.FromBeginning(false);
-consumer.Poll(200);
-consumer.PollAtEnd(1000);
-consumer.AddTopic("vehicle-events");
+consumer.client_id("vehicle-consumer");
+consumer.group_id("vehicle-consumers");
+consumer.from_beginning(false);
+consumer.poll(std::chrono::milliseconds{200});
+consumer.poll_at_end(std::chrono::milliseconds{1000});
+consumer.add_topic("vehicle-events");
 
 consumer.consume([](const sc::kafka_message& message) {
     std::cout << message.topic << ": " << message.data << '\n';
@@ -47,8 +47,8 @@ Brokers without a port use 9092. It throws `std::invalid_argument` for an empty
 list or a `,` in a host, since librdkafka's comma-separated form isn't used here.
 
 `AddTopic()` also takes a `std::vector<std::string>` or a braced list, adding
-every item, e.g. `consumer.AddTopic(sc::explode("topic1;topic2"))` or
-`consumer.AddTopic({"topic1", "topic2"})`. Adding a topic twice has no
+every item, e.g. `consumer.add_topic(sc::explode("topic1;topic2"))` or
+`consumer.add_topic({"topic1", "topic2"})`. Adding a topic twice has no
 effect. `consume()` returns without creating a Kafka connection when no topics have
 been added. Set `MaxRecords()` to a positive number for bounded consumers and
 tests; the default (`0`) consumes until interrupted with `SIGINT` or `SIGTERM`.
@@ -89,10 +89,10 @@ configure time, so it always matches code that compiles:
 <!-- sc-example: examples/sc-kafka-demo.cpp -->
 ```cpp
 sc::kafka consumer{brokers};
-consumer.ClientId(client_id);
-consumer.GroupId(group_id);
-consumer.MaxRecords(max_records);
-consumer.AddTopic(topics);
+consumer.client_id(client_id);
+consumer.group_id(group_id);
+consumer.max_records(max_records);
+consumer.add_topic(topics);
 
 sc::console::heading("Messages, from where this group left off");
 int received = 0;

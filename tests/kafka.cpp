@@ -14,59 +14,59 @@ int main() {
     sc::kafka consumer{"localhost:9092"};
 
     SECTION("Brokers");
-    CHECK_EQ(consumer.Brokers().to_string(), "localhost:9092");
+    CHECK_EQ(consumer.brokers().to_string(), "localhost:9092");
     const sc::kafka several{"kafka1;kafka2:9093;[::1]"};
-    CHECK_EQ(several.Brokers().to_string(","), "kafka1:9092,kafka2:9093,[::1]:9092");
+    CHECK_EQ(several.brokers().to_string(","), "kafka1:9092,kafka2:9093,[::1]:9092");
     const sc::kafka listed{{{"kafka1", 9094}, {"kafka2", 0}}};
-    CHECK_EQ(listed.Brokers().to_string(), "kafka1:9094;kafka2:9092");
+    CHECK_EQ(listed.brokers().to_string(), "kafka1:9094;kafka2:9092");
     CHECK_THROWS_AS(sc::kafka{""}, std::invalid_argument);
     CHECK_THROWS_AS(sc::kafka{"kafka1,kafka2"}, std::invalid_argument);
     CHECK_THROWS_AS(sc::kafka{"kafka1:nope"}, std::invalid_argument);
 
     SECTION("Default consumer configuration");
-    CHECK_EQ(consumer.MaxRecords(), 0);
-    CHECK_EQ(consumer.FromBeginning(), false);
-    CHECK_EQ(consumer.Poll(), 200);
-    CHECK_EQ(consumer.PollAtEnd(), 5000);
-    CHECK_EQ(consumer.ClientId(), "simply-cpp-kafka");
-    CHECK_EQ(consumer.GroupId(), "simply-cpp-kafka");
-    CHECK_EQ(consumer.AutoCommit(), false);
-    CHECK_EQ(consumer.LogLevel(), 3);
+    CHECK_EQ(consumer.max_records(), 0);
+    CHECK_EQ(consumer.from_beginning(), false);
+    CHECK_EQ(consumer.poll().count(), 200);
+    CHECK_EQ(consumer.poll_at_end().count(), 5000);
+    CHECK_EQ(consumer.client_id(), "simply-cpp-kafka");
+    CHECK_EQ(consumer.group_id(), "simply-cpp-kafka");
+    CHECK_EQ(consumer.auto_commit(), false);
+    CHECK(consumer.log_level() == sc::log_level::error);
 
     SECTION("Consumer configuration");
-    consumer.MaxRecords(25);
-    consumer.FromBeginning(true);
-    consumer.Poll(100);
-    consumer.PollAtEnd(750);
-    consumer.ClientId("streamvms-client");
-    consumer.GroupId("streamvms-consumers");
-    consumer.AutoCommit(true);
-    consumer.LogLevel(6);
+    consumer.max_records(25);
+    consumer.from_beginning(true);
+    consumer.poll(std::chrono::milliseconds{100});
+    consumer.poll_at_end(std::chrono::milliseconds{750});
+    consumer.client_id("streamvms-client");
+    consumer.group_id("streamvms-consumers");
+    consumer.auto_commit(true);
+    consumer.log_level(sc::log_level::info);
 
-    CHECK_EQ(consumer.MaxRecords(), 25);
-    CHECK_EQ(consumer.FromBeginning(), true);
-    CHECK_EQ(consumer.Poll(), 100);
-    CHECK_EQ(consumer.PollAtEnd(), 750);
-    CHECK_EQ(consumer.ClientId(), "streamvms-client");
-    CHECK_EQ(consumer.GroupId(), "streamvms-consumers");
-    CHECK_EQ(consumer.AutoCommit(), true);
-    CHECK_EQ(consumer.LogLevel(), 6);
+    CHECK_EQ(consumer.max_records(), 25);
+    CHECK_EQ(consumer.from_beginning(), true);
+    CHECK_EQ(consumer.poll().count(), 100);
+    CHECK_EQ(consumer.poll_at_end().count(), 750);
+    CHECK_EQ(consumer.client_id(), "streamvms-client");
+    CHECK_EQ(consumer.group_id(), "streamvms-consumers");
+    CHECK_EQ(consumer.auto_commit(), true);
+    CHECK(consumer.log_level() == sc::log_level::info);
 
     SECTION("No-topic consumption does not contact Kafka");
     CHECK_NOTHROW(consumer.consume([](const sc::kafka_message &) {}));
 
     SECTION("Adding an empty topic list adds no topics");
-    consumer.AddTopic(std::vector<std::string>{});
+    consumer.add_topic(std::vector<std::string>{});
     CHECK_NOTHROW(consumer.consume([](const sc::kafka_message &) {}));
 
     SECTION("Topics can be added one at a time, as a vector or as a braced list");
     // The topic set is private, so this checks that every call form compiles and resolves.
     sc::kafka topics{"localhost:9092"};
-    topics.AddTopic("one");
-    topics.AddTopic(std::vector<std::string>{"two", "three"});
-    topics.AddTopic({"four"});
-    topics.AddTopic({"five", "six"});
-    CHECK_NOTHROW(topics.AddTopic("one"));
+    topics.add_topic("one");
+    topics.add_topic(std::vector<std::string>{"two", "three"});
+    topics.add_topic({"four"});
+    topics.add_topic({"five", "six"});
+    CHECK_NOTHROW(topics.add_topic("one"));
 
     SECTION("Consumers on their own threads share the signal handling");
     {
@@ -78,7 +78,7 @@ int main() {
         for (const auto *topic: {"first", "second"}) {
             threads.emplace_back([topic, &finished] {
                 sc::kafka quiet{"127.0.0.1:1"};
-                quiet.AddTopic(topic);
+                quiet.add_topic(topic);
                 try {
                     quiet.consume([](const sc::kafka_message &) {});
                 } catch (const std::exception &) {
@@ -101,7 +101,7 @@ int main() {
         CHECK_THROWS_AS(sc::kafka_producer{""}, std::invalid_argument);
         CHECK_THROWS_AS(sc::kafka_producer{"kafka1,kafka2"}, std::invalid_argument);
         const sc::kafka_producer producer{"kafka1;kafka2:9093"};
-        CHECK_EQ(producer.Brokers().to_string(), "kafka1:9092;kafka2:9093");
+        CHECK_EQ(producer.brokers().to_string(), "kafka1:9092;kafka2:9093");
     }
 
     SECTION("A producer with no broker: send() queues, flush() times out, nothing is delivered");
@@ -126,9 +126,9 @@ int main() {
             CHECK_EQ(producer.failed(), std::uint64_t{0});
         }
         sc::kafka consumer{brokers ? brokers : "localhost:9092"};
-        consumer.GroupId("sc-kafka-test-" + key);
-        consumer.FromBeginning(true);
-        consumer.AddTopic(topic);
+        consumer.group_id("sc-kafka-test-" + key);
+        consumer.from_beginning(true);
+        consumer.add_topic(topic);
         // consume() keeps polling (a new group's first polls are empty until its partitions are
         // assigned): stop it once the message is back, or after a minute.
         std::atomic<bool> found{false};

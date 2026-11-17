@@ -76,35 +76,35 @@ namespace sc {
     }
 
     kafka::kafka(ip_endpoints brokers) : brokers_(checked_brokers(std::move(brokers))),
-                                         client_id("simply-cpp-kafka"),
-                                         group_id("simply-cpp-kafka") {
+                                         client_id_("simply-cpp-kafka"),
+                                         group_id_("simply-cpp-kafka") {
     }
 
     void kafka::consume(const std::function<void(const kafka_message &)> &handler) {
-        if (topics.empty()) {
+        if (topics_.empty()) {
             std::cerr << "No topics to consume..." << std::endl;
             return;
         }
 
         Properties props;
         props.put("bootstrap.servers", brokers_.to_string(","));
-        props.put("auto.offset.reset", from_beginning ? "earliest" : "latest");
-        props.put("client.id", client_id);
-        props.put("group.id", group_id);
-        props.put("enable.auto.commit", auto_commit ? "true" : "false");
-        props.put("log_level", std::to_string(log_level));
+        props.put("auto.offset.reset", from_beginning_ ? "earliest" : "latest");
+        props.put("client.id", client_id_);
+        props.put("group.id", group_id_);
+        props.put("enable.auto.commit", auto_commit_ ? "true" : "false");
+        props.put("log_level", std::to_string(static_cast<int>(log_level_)));
 
         const consuming running;
         KafkaConsumer consumer(props);
-        consumer.subscribe(topics);
-        if (from_beginning) consumer.seekToBeginning();
+        consumer.subscribe(topics_);
+        if (from_beginning_) consumer.seekToBeginning();
 
         unsigned int counter = 0;
-        while (!stop_loop.load(std::memory_order_relaxed) && (!max_records || counter < max_records)) {
-            auto records = consumer.poll(ms(poll));
+        while (!stop_loop.load(std::memory_order_relaxed) && (!max_records_ || counter < static_cast<unsigned>(max_records_))) {
+            auto records = consumer.poll(poll_);
             if (records.empty()) {
-                if (poll_at_end <= 0) break;
-                records = consumer.poll(ms(poll_at_end));
+                if (poll_at_end_.count() <= 0) break;
+                records = consumer.poll(poll_at_end_);
             }
 
             for (const auto &record: records) {

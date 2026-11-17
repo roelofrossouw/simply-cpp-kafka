@@ -63,5 +63,6 @@ add_sc_example(sc-kafka-demo)
 #############
 # Packaging #
 #############
-# librdkafka1 (the C library it links) comes from shlibdeps; nothing from modern-cpp-kafka (headers only) is needed at run time
-package_sc_module(DEV_DEPENDS "simply-cpp-dev (>= 3.0.0~)")
+# librdkafka1 (the C library it links) comes from shlibdeps; nothing from modern-cpp-kafka (headers only) is needed at run time.
+# The -dev package's CMake config finds rdkafka, so it needs librdkafka-dev (the same name on every release).
+package_sc_module(DEV_DEPENDS "simply-cpp-dev (>= 3.0.0~)" librdkafka-dev)
