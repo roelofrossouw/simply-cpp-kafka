@@ -63,4 +63,5 @@ add_sc_example(sc-kafka-demo)
 #############
 # Packaging #
 #############
-package_sc_module(DEPENDS librdkafka++1 DEV_DEPENDS "simply-cpp-dev (>= 1.20.0~)")
+# librdkafka1 (the C library it links) comes from shlibdeps; nothing from modern-cpp-kafka (headers only) is needed at run time
+package_sc_module(DEV_DEPENDS "simply-cpp-dev (>= 1.20.0~)")
