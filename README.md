@@ -28,7 +28,7 @@ target_link_libraries(consumer PRIVATE sc::sc-kafka-shared)
 ```cpp
 #include <sc/kafka/kafka.h>
 
-sc::kafka consumer{"broker.example:9092"};
+sc::kafka::consumer consumer{"broker.example:9092"};
 consumer.client_id("vehicle-consumer");
 consumer.group_id("vehicle-consumers");
 consumer.from_beginning(false);
@@ -36,7 +36,7 @@ consumer.poll(std::chrono::milliseconds{200});
 consumer.poll_at_end(std::chrono::milliseconds{1000});
 consumer.add_topic("vehicle-events");
 
-consumer.consume([](const sc::kafka_message& message) {
+consumer.consume([](const sc::kafka::message& message) {
     std::cout << message.topic << ": " << message.data << '\n';
 });
 ```
@@ -88,7 +88,7 @@ configure time, so it always matches code that compiles:
 
 <!-- sc-example: examples/sc-kafka-demo.cpp -->
 ```cpp
-sc::kafka consumer{brokers};
+sc::kafka::consumer consumer{brokers};
 consumer.client_id(client_id);
 consumer.group_id(group_id);
 consumer.max_records(max_records);
@@ -96,7 +96,7 @@ consumer.add_topic(topics);
 
 sc::console::heading("Messages, from where this group left off");
 int received = 0;
-consumer.consume([&](const sc::kafka_message &message) {
+consumer.consume([&](const sc::kafka::message &message) {
     if (++received > max_records) return; // the rest of the last batch, counted below
     const auto created = sc::datetime::from_unix(message.created / 1000);
     sc::console::note(created.format("%H:%M:%S") + "  " + message.topic + "  key " + message.key + "  (" +
@@ -107,7 +107,7 @@ consumer.consume([&](const sc::kafka_message &message) {
 
 ## Producing
 
-`sc::kafka_producer` sends messages: `send(topic, key, value)` queues one and
+`sc::kafka::producer` sends messages: `send(topic, key, value)` queues one and
 returns at once; it goes out in the background, in small batches. A delivery
 that fails later (no broker, or not delivered within 30 seconds) is counted in
 `failed()` and reported to std::cerr; `delivered()` counts the rest.
@@ -116,7 +116,7 @@ that fails later (no broker, or not delivered within 30 seconds) is counted in
 by threads.
 
 ```cpp
-sc::kafka_producer producer{"kafka1:9092;kafka2:9092", "twc-poller"};
+sc::kafka::producer producer{"kafka1:9092;kafka2:9092", "twc-poller"};
 producer.send("ta_twc_topic", imei, record.dump());
 ```
 

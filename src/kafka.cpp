@@ -20,7 +20,7 @@ using ms = std::chrono::milliseconds;
 
 namespace {
     // Shared by every consume() in the process, so several consumers can run on their own threads:
-    // SIGINT/SIGTERM (or kafka::stop()) ends them all. The handlers are installed while any
+    // SIGINT/SIGTERM (or consumer::stop()) ends them all. The handlers are installed while any
     // consumer runs, by the first to start, and restored by the last to finish.
     std::atomic<bool> stop_loop{false};
     static_assert(std::atomic<bool>::is_always_lock_free, "set from a signal handler");
@@ -57,7 +57,7 @@ namespace {
     };
 }
 
-namespace sc {
+namespace sc::kafka {
     namespace {
         std::string text(const ConstBuffer data) { return {static_cast<const char *>(data.data()), data.size()}; }
     }
@@ -75,12 +75,12 @@ namespace sc {
         }
     }
 
-    kafka::kafka(ip_endpoints brokers) : brokers_(checked_brokers(std::move(brokers))),
+    consumer::consumer(ip_endpoints brokers) : brokers_(checked_brokers(std::move(brokers))),
                                          client_id_("simply-cpp-kafka"),
                                          group_id_("simply-cpp-kafka") {
     }
 
-    void kafka::consume(const std::function<void(const kafka_message &)> &handler) {
+    void consumer::consume(const std::function<void(const message &)> &handler) {
         if (topics_.empty()) {
             std::cerr << "No topics to consume..." << std::endl;
             return;
@@ -129,11 +129,11 @@ namespace sc {
         consumer.close();
     }
 
-    void kafka::stop() {
+    void consumer::stop() {
         stop_loop.store(true, std::memory_order_relaxed);
     }
 
-    class kafka_producer::implementation {
+    class producer::implementation {
     public:
         implementation(const ip_endpoints &brokers, const std::string &client_id)
             : producer_(properties(brokers, client_id)) {
@@ -153,17 +153,17 @@ namespace sc {
         }
     };
 
-    kafka_producer::kafka_producer(ip_endpoints brokers, std::string client_id)
+    producer::producer(ip_endpoints brokers, std::string client_id)
         : brokers_(checked_brokers(std::move(brokers))),
           implementation_(std::make_unique<implementation>(brokers_, client_id)) {
     }
 
-    kafka_producer::~kafka_producer() {
+    producer::~producer() {
         if (!flush(std::chrono::seconds{10})) std::cerr << "Kafka: messages still queued at shutdown were dropped" << std::endl;
         implementation_->producer_.close(std::chrono::milliseconds{0}); // purges what's left, rather than waiting for it
     }
 
-    void kafka_producer::send(const std::string &topic, const std::string &key, const std::string &value) {
+    void producer::send(const std::string &topic, const std::string &key, const std::string &value) {
         const ProducerRecord record{topic, Key{key.data(), key.size()}, Value{value.data(), value.size()}};
         try {
             implementation_->producer_.send(
@@ -183,7 +183,7 @@ namespace sc {
         }
     }
 
-    bool kafka_producer::flush(const std::chrono::milliseconds timeout) {
+    bool producer::flush(const std::chrono::milliseconds timeout) {
         return !implementation_->producer_.flush(timeout);
     }
-} // namespace sc
+} // namespace sc::kafka

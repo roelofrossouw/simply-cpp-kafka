@@ -11,17 +11,17 @@
 #include <vector>
 
 int main() {
-    sc::kafka consumer{"localhost:9092"};
+    sc::kafka::consumer consumer{"localhost:9092"};
 
     SECTION("Brokers");
     CHECK_EQ(consumer.brokers().to_string(), "localhost:9092");
-    const sc::kafka several{"kafka1;kafka2:9093;[::1]"};
+    const sc::kafka::consumer several{"kafka1;kafka2:9093;[::1]"};
     CHECK_EQ(several.brokers().to_string(","), "kafka1:9092,kafka2:9093,[::1]:9092");
-    const sc::kafka listed{{{"kafka1", 9094}, {"kafka2", 0}}};
+    const sc::kafka::consumer listed{{{"kafka1", 9094}, {"kafka2", 0}}};
     CHECK_EQ(listed.brokers().to_string(), "kafka1:9094;kafka2:9092");
-    CHECK_THROWS_AS(sc::kafka{""}, std::invalid_argument);
-    CHECK_THROWS_AS(sc::kafka{"kafka1,kafka2"}, std::invalid_argument);
-    CHECK_THROWS_AS(sc::kafka{"kafka1:nope"}, std::invalid_argument);
+    CHECK_THROWS_AS(sc::kafka::consumer{""}, std::invalid_argument);
+    CHECK_THROWS_AS(sc::kafka::consumer{"kafka1,kafka2"}, std::invalid_argument);
+    CHECK_THROWS_AS(sc::kafka::consumer{"kafka1:nope"}, std::invalid_argument);
 
     SECTION("Default consumer configuration");
     CHECK_EQ(consumer.max_records(), 0);
@@ -53,15 +53,15 @@ int main() {
     CHECK(consumer.log_level() == sc::log_level::info);
 
     SECTION("No-topic consumption does not contact Kafka");
-    CHECK_NOTHROW(consumer.consume([](const sc::kafka_message &) {}));
+    CHECK_NOTHROW(consumer.consume([](const sc::kafka::message &) {}));
 
     SECTION("Adding an empty topic list adds no topics");
     consumer.add_topic(std::vector<std::string>{});
-    CHECK_NOTHROW(consumer.consume([](const sc::kafka_message &) {}));
+    CHECK_NOTHROW(consumer.consume([](const sc::kafka::message &) {}));
 
     SECTION("Topics can be added one at a time, as a vector or as a braced list");
     // The topic set is private, so this checks that every call form compiles and resolves.
-    sc::kafka topics{"localhost:9092"};
+    sc::kafka::consumer topics{"localhost:9092"};
     topics.add_topic("one");
     topics.add_topic(std::vector<std::string>{"two", "three"});
     topics.add_topic({"four"});
@@ -77,10 +77,10 @@ int main() {
         std::atomic<int> finished{0};
         for (const auto *topic: {"first", "second"}) {
             threads.emplace_back([topic, &finished] {
-                sc::kafka quiet{"127.0.0.1:1"};
+                sc::kafka::consumer quiet{"127.0.0.1:1"};
                 quiet.add_topic(topic);
                 try {
-                    quiet.consume([](const sc::kafka_message &) {});
+                    quiet.consume([](const sc::kafka::message &) {});
                 } catch (const std::exception &) {
                     // the subscription timing out
                 }
@@ -89,7 +89,7 @@ int main() {
         }
         std::this_thread::sleep_for(std::chrono::seconds{2});
         std::raise(SIGTERM); // still running afterwards: the consumers' handler took it
-        sc::kafka::stop();
+        sc::kafka::consumer::stop();
         for (auto &thread: threads) thread.join();
         CHECK_EQ(finished.load(), 2);
         const auto handler = std::signal(SIGTERM, SIG_DFL);
@@ -98,15 +98,15 @@ int main() {
 
     SECTION("A producer checks its brokers as a consumer does");
     {
-        CHECK_THROWS_AS(sc::kafka_producer{""}, std::invalid_argument);
-        CHECK_THROWS_AS(sc::kafka_producer{"kafka1,kafka2"}, std::invalid_argument);
-        const sc::kafka_producer producer{"kafka1;kafka2:9093"};
+        CHECK_THROWS_AS(sc::kafka::producer{""}, std::invalid_argument);
+        CHECK_THROWS_AS(sc::kafka::producer{"kafka1,kafka2"}, std::invalid_argument);
+        const sc::kafka::producer producer{"kafka1;kafka2:9093"};
         CHECK_EQ(producer.brokers().to_string(), "kafka1:9092;kafka2:9093");
     }
 
     SECTION("A producer with no broker: send() queues, flush() times out, nothing is delivered");
     {
-        sc::kafka_producer producer{"127.0.0.1:1", "sc-kafka-test"};
+        sc::kafka::producer producer{"127.0.0.1:1", "sc-kafka-test"};
         CHECK_NOTHROW(producer.send("nowhere", "key", "value"));
         CHECK(!producer.flush(std::chrono::milliseconds{500}));
         CHECK_EQ(producer.delivered(), std::uint64_t{0});
@@ -119,13 +119,13 @@ int main() {
         const char *brokers = std::getenv("SC_KAFKA_DEMO_BROKERS");
         const std::string key = "sc-kafka-test-" + std::to_string(std::chrono::system_clock::now().time_since_epoch().count());
         {
-            sc::kafka_producer producer{brokers ? brokers : "localhost:9092", "sc-kafka-test"};
+            sc::kafka::producer producer{brokers ? brokers : "localhost:9092", "sc-kafka-test"};
             producer.send(topic, key, R"({"hello":"kafka"})");
             CHECK(producer.flush(std::chrono::seconds{15}));
             CHECK_EQ(producer.delivered(), std::uint64_t{1});
             CHECK_EQ(producer.failed(), std::uint64_t{0});
         }
-        sc::kafka consumer{brokers ? brokers : "localhost:9092"};
+        sc::kafka::consumer consumer{brokers ? brokers : "localhost:9092"};
         consumer.group_id("sc-kafka-test-" + key);
         consumer.from_beginning(true);
         consumer.add_topic(topic);
@@ -134,12 +134,12 @@ int main() {
         std::atomic<bool> found{false};
         std::thread deadline{[&found] {
             for (int i = 0; i < 600 && !found; ++i) std::this_thread::sleep_for(std::chrono::milliseconds{100});
-            sc::kafka::stop();
+            sc::kafka::consumer::stop();
         }};
-        consumer.consume([&](const sc::kafka_message &message) {
+        consumer.consume([&](const sc::kafka::message &message) {
             if (message.key == key && message.data == R"({"hello":"kafka"})") {
                 found = true;
-                sc::kafka::stop();
+                sc::kafka::consumer::stop();
             }
         });
         deadline.join();

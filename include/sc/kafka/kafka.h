@@ -14,29 +14,30 @@
 #include <utility>
 #include <vector>
 
-namespace sc {
-    struct kafka_message {
+namespace sc::kafka {
+    struct message {
         std::string topic;
         std::string key;
         std::int64_t created;
         std::string data;
     };
 
-    class kafka {
+    // Reads topics (sc::kafka until 4.0.0).
+    class consumer {
     public:
         // One or more brokers: "kafka1;kafka2:9093", a std::vector<ip_endpoint> or a braced list.
         // Entries without a port use 9092. Throws std::invalid_argument for an empty list or a
         // ',' in a host (separate brokers with ';', not librdkafka's ',').
-        explicit kafka(ip_endpoints brokers);
+        explicit consumer(ip_endpoints brokers);
 
         [[nodiscard]] const ip_endpoints &brokers() const { return brokers_; }
 
 
         // Polls the topics and calls handler for each message, committing after each batch, until
         // max_records() messages (when not 0), the topics stay quiet for poll_at_end() (when it is
-        // 0 or less), SIGINT/SIGTERM, or stop(). Several kafka objects may consume at once, each on
+        // 0 or less), SIGINT/SIGTERM, or stop(). Several consumers may consume at once, each on
         // its own thread; a signal or stop() ends them all.
-        void consume(const std::function<void(const kafka_message &)> &handler);
+        void consume(const std::function<void(const message &)> &handler);
 
         // Asks every consume() running in the process to finish after its current batch.
         static void stop();
@@ -88,14 +89,14 @@ namespace sc {
     // background, in batches. A delivery that fails later (no broker, or not delivered within 30
     // seconds) is counted in failed() and reported to std::cerr. The destructor waits up to 10
     // seconds for what is still queued, then drops it. Safe to share between threads.
-    class kafka_producer {
+    class producer {
     public:
-        // Brokers as for sc::kafka (9092 without a port; separate them with ';').
-        explicit kafka_producer(ip_endpoints brokers, std::string client_id = "simply-cpp-kafka");
-        ~kafka_producer();
+        // Brokers as for sc::kafka::consumer (9092 without a port; separate them with ';').
+        explicit producer(ip_endpoints brokers, std::string client_id = "simply-cpp-kafka");
+        ~producer();
 
-        kafka_producer(const kafka_producer &) = delete;
-        kafka_producer &operator=(const kafka_producer &) = delete;
+        producer(const producer &) = delete;
+        producer &operator=(const producer &) = delete;
 
         // Throws std::runtime_error when Kafka refuses it at once: a full queue, or a topic the
         // broker doesn't have and won't create.
@@ -115,6 +116,6 @@ namespace sc {
         std::shared_ptr<std::atomic<std::uint64_t>> failed_ = std::make_shared<std::atomic<std::uint64_t>>(0);
         std::unique_ptr<implementation> implementation_;
     };
-} // sc
+} // sc::kafka
 
 #endif //SC_KAFKA_H

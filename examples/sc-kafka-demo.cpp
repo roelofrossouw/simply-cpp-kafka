@@ -36,7 +36,7 @@ int main() {
         sc::timer sw;
 
         // [readme]
-        sc::kafka consumer{brokers};
+        sc::kafka::consumer consumer{brokers};
         consumer.client_id(client_id);
         consumer.group_id(group_id);
         consumer.max_records(max_records);
@@ -44,7 +44,7 @@ int main() {
 
         sc::console::heading("Messages, from where this group left off");
         int received = 0;
-        consumer.consume([&](const sc::kafka_message &message) {
+        consumer.consume([&](const sc::kafka::message &message) {
             if (++received > max_records) return; // the rest of the last batch, counted below
             const auto created = sc::datetime::from_unix(message.created / 1000);
             sc::console::note(created.format("%H:%M:%S") + "  " + message.topic + "  key " + message.key + "  (" +
