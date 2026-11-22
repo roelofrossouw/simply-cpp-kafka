@@ -1,4 +1,5 @@
 #include <sc/kafka/kafka.h>
+#include "pending_offsets.h"
 
 #include <kafka/KafkaConsumer.h>
 #include <kafka/KafkaProducer.h>
@@ -64,6 +65,19 @@ namespace {
 namespace sc::kafka {
     namespace {
         std::string text(const ConstBuffer data) { return {static_cast<const char *>(data.data()), data.size()}; }
+
+        // Commits these offsets; false, with the reason in error, when the broker refuses them.
+        bool commit_offsets(KafkaConsumer &consumer, const detail::offsets &offsets, std::string &error) {
+            TopicPartitionOffsets list;
+            for (const auto &[partition, offset]: offsets) list[TopicPartition{partition.first, partition.second}] = offset;
+            try {
+                consumer.commitSync(list);
+                return true;
+            } catch (const std::exception &failure) {
+                error = failure.what();
+                return false;
+            }
+        }
     }
 
     namespace {
@@ -115,6 +129,11 @@ namespace sc::kafka {
         if (!assignment_.empty()) props.put("partition.assignment.strategy", assignment_);
 
         const consuming running;
+        // Handled offsets a commit couldn't send yet (see pending_offsets.h). Declared before the
+        // consumer: its close() (also from its destructor) gives up the partitions, and the revoke
+        // callback commits them from here.
+        detail::offsets pending;
+        bool pending_reported = false;
         KafkaConsumer consumer(props);
 
         // The first assignment can take long: a rebalance waits for every member of the group to
@@ -133,7 +152,7 @@ namespace sc::kafka {
             }
         };
         try {
-            consumer.subscribe(topics_, [this, &note_assigned](const RebalanceEventType type, const TopicPartitions &partitions) {
+            consumer.subscribe(topics_, [this, &note_assigned, &consumer, &pending](const RebalanceEventType type, const TopicPartitions &partitions) {
                 rebalance_count.fetch_add(1, std::memory_order_relaxed);
                 if (type == RebalanceEventType::PartitionsAssigned) note_assigned();
                 std::string listed;
@@ -141,6 +160,19 @@ namespace sc::kafka {
                 std::cout << "Kafka " << client_id_ << ": partitions "
                           << (type == RebalanceEventType::PartitionsAssigned ? "assigned: " : "revoked: ")
                           << (listed.empty() ? "none" : listed) << std::endl;
+                // Partitions given up with handled offsets not committed yet: commit them now,
+                // while they're still ours, or their new owner handles those messages again.
+                if (type == RebalanceEventType::PartitionsRevoked && !pending.empty()) {
+                    const auto revoked = detail::take(pending, partitions);
+                    if (revoked.empty()) return;
+                    if (std::string error; commit_offsets(consumer, revoked, error)) {
+                        std::cout << "Kafka " << client_id_ << ": committed " << revoked.size()
+                                  << " partition(s) put off by the rebalance before giving them up" << std::endl;
+                    } else {
+                        failed_commit_count.fetch_add(1, std::memory_order_relaxed);
+                        std::cerr << "Kafka " << client_id_ << ": commit failed, the batch may come again: " << error << std::endl;
+                    }
+                }
             }, subscribe_wait_);
         } catch (const KafkaException &error) {
             if (error.error().value() != RD_KAFKA_RESP_ERR__TIMED_OUT) throw;
@@ -157,17 +189,45 @@ namespace sc::kafka {
 
         // Commits a batch's handled records (once before_commit() says their work is done), by
         // explicit offsets: what poll() stored would also cover records a cut batch didn't handle.
-        // A failed commit isn't fatal: those messages come again after the rebalance.
-        const auto commit = [this, &consumer](const batch_cut &cut) {
-            if (cut.commit.empty()) return;
-            if (before_commit_) before_commit_();
-            TopicPartitionOffsets offsets;
-            for (const auto &[partition, offset]: cut.commit) offsets[TopicPartition{partition.first, partition.second}] = offset;
-            try {
-                consumer.commitSync(offsets);
-            } catch (const std::exception &error) {
-                failed_commit_count.fetch_add(1, std::memory_order_relaxed);
-                std::cerr << "Kafka " << client_id_ << ": commit failed, the batch may come again: " << error.what() << std::endl;
+        // A commit sent while the group rebalances fails: the broker holds it behind this member's
+        // JoinGroup and then refuses the generation that just ended (ILLEGAL_GENERATION). Its
+        // offsets stay pending, go out with the next commit (after each poll) and, for partitions
+        // given up meanwhile, from the revoke callback. Only offsets that never get committed
+        // count as failed commits: their messages come again to the partition's next owner.
+        const auto commit = [this, &consumer, &pending, &pending_reported](const detail::offsets &handled) {
+            if (handled.empty() && pending.empty()) return;
+            if (!handled.empty() && before_commit_) before_commit_();
+            if (!pending.empty()) {
+                // Partitions lost without a revoke (or whose revoke commit failed): nothing to do.
+                TopicPartitions assigned;
+                try {
+                    assigned = consumer.assignment();
+                } catch (const std::exception &) {
+                    assigned.clear();
+                    for (const auto &[partition, offset]: pending) assigned.insert(partition); // can't tell: keep them all
+                }
+                if (const auto gone = detail::take_unassigned(pending, assigned); !gone.empty()) {
+                    failed_commit_count.fetch_add(1, std::memory_order_relaxed);
+                    std::cerr << "Kafka " << client_id_ << ": commit failed, the batch may come again: " << gone.size()
+                              << " partition(s) no longer assigned" << std::endl;
+                }
+            }
+            detail::offsets offsets = pending;
+            detail::merge(offsets, handled);
+            if (offsets.empty()) return;
+            if (std::string error; commit_offsets(consumer, offsets, error)) {
+                if (pending_reported) {
+                    std::cout << "Kafka " << client_id_ << ": commit put off by the rebalance went through" << std::endl;
+                }
+                pending.clear();
+                pending_reported = false;
+            } else {
+                pending = std::move(offsets);
+                if (!pending_reported) {
+                    std::cerr << "Kafka " << client_id_ << ": commit put off (the group is rebalancing, say), trying again: "
+                              << error << std::endl;
+                    pending_reported = true;
+                }
             }
         };
         const bool may_cut = !auto_commit_;
@@ -175,6 +235,7 @@ namespace sc::kafka {
         unsigned int counter = 0;
         while (!stop_loop.load(std::memory_order_relaxed) && (!max_records_ || counter < static_cast<unsigned>(max_records_))) {
             auto records = consumer.poll(poll_);
+            if (records.empty() && !pending.empty()) commit({}); // the rebalance may be over: try again
             if (records.empty()) {
                 if (poll_at_end_.count() <= 0) break;
                 records = consumer.poll(poll_at_end_);
@@ -215,7 +276,7 @@ namespace sc::kafka {
                 positions.reserve(records.size());
                 for (const auto &record: records) positions.push_back({record.topic(), record.partition(), record.offset()});
                 const auto cut = cut_batch(positions, handled);
-                commit(cut);
+                commit(cut.commit);
                 if (!cut.seek.empty()) {
                     cut_batch_count.fetch_add(1, std::memory_order_relaxed);
                     if (!stop_loop.load(std::memory_order_relaxed)) {
@@ -234,7 +295,13 @@ namespace sc::kafka {
             counter += handled;
         }
 
+        if (!pending.empty()) commit({}); // a last try; close() also commits from the revoke callback
         consumer.close();
+        if (pending_reported && !pending.empty()) {
+            failed_commit_count.fetch_add(1, std::memory_order_relaxed);
+            std::cerr << "Kafka " << client_id_ << ": commit failed, the batch may come again: " << pending.size()
+                      << " partition(s) still pending at close" << std::endl;
+        }
     }
 
     void consumer::stop() {

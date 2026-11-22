@@ -1,4 +1,5 @@
 #include <sc/kafka/kafka.h>
+#include "../src/pending_offsets.h"
 #include <sc_test.h>
 
 #include <atomic>
@@ -117,6 +118,35 @@ int main() {
         CHECK_EQ(none.seek.at(key{"video", 0}), 10);
 
         CHECK(sc::kafka::cut_batch({}, 0).commit.empty());
+    }
+
+    SECTION("Offsets a rebalance put off go out later, never going back");
+    {
+        using key = std::pair<std::string, int>;
+        sc::kafka::detail::offsets pending{{key{"loc", 0}, 50}, {key{"loc", 1}, 70}};
+        // The next batch: loc-0 moved on, loc-2 is new; loc-1 keeps its pending offset.
+        sc::kafka::detail::offsets next = pending;
+        sc::kafka::detail::merge(next, {{key{"loc", 0}, 55}, {key{"loc", 2}, 9}});
+        CHECK_EQ(next.size(), 3u);
+        CHECK_EQ(next.at(key{"loc", 0}), 55);
+        CHECK_EQ(next.at(key{"loc", 1}), 70);
+        CHECK_EQ(next.at(key{"loc", 2}), 9);
+        // An older offset never replaces a newer one.
+        sc::kafka::detail::merge(next, {{key{"loc", 0}, 40}});
+        CHECK_EQ(next.at(key{"loc", 0}), 55);
+
+        // A revoke takes its partitions out, to commit before giving them up.
+        const auto revoked = sc::kafka::detail::take(next, {key{"loc", 1}, key{"loc", 7}});
+        CHECK_EQ(revoked.size(), 1u);
+        CHECK_EQ(revoked.at(key{"loc", 1}), 70);
+        CHECK_EQ(next.size(), 2u);
+
+        // Partitions no longer assigned (lost) are dropped from what is retried.
+        const auto gone = sc::kafka::detail::take_unassigned(next, {key{"loc", 2}});
+        CHECK_EQ(gone.size(), 1u);
+        CHECK(gone.contains(key{"loc", 0}));
+        CHECK_EQ(next.size(), 1u);
+        CHECK_EQ(next.at(key{"loc", 2}), 9);
     }
 
     SECTION("Consumers on their own threads share the signal handling");

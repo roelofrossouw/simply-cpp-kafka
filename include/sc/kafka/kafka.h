@@ -50,10 +50,13 @@ namespace sc::kafka {
         // 0 or less), SIGINT/SIGTERM, or stop(). Several consumers may consume at once, each on
         // its own thread; a signal or stop() ends them all.
         //
-        // A commit that fails (the group rebalancing as a consumer joins or leaves, say) is reported
-        // and counted (failed_commits()), not thrown: those messages come again to whichever
-        // consumer gets their partition, so a handler must take a message twice. Rebalances are
-        // reported on std::cout, with the partitions, and counted (rebalances()).
+        // A commit refused while the group rebalances (a consumer joining or leaving) is tried
+        // again: with the next commit once the rebalance is over, and for partitions this consumer
+        // gives up, from the revoke callback before their new owner starts (since 5.0.1). Offsets
+        // that still can't be committed are reported and counted (failed_commits()), not thrown:
+        // those messages come again to whichever consumer gets their partition, so a handler must
+        // take a message twice. Rebalances are reported on std::cout, with the partitions, and
+        // counted (rebalances()).
         void consume(const std::function<void(const message &)> &handler);
 
         // Asks every consume() running in the process to finish: after the message being
@@ -69,6 +72,8 @@ namespace sc::kafka {
 
         // Since the process started, over every consumer in it.
         [[nodiscard]] static std::uint64_t rebalances();
+        // Commits given up on (since 5.0.1 not the ones a rebalance only put off): their
+        // messages may be handled again.
         [[nodiscard]] static std::uint64_t failed_commits();
         // Consumers that had no partitions yet when subscribing took longer than subscribe_wait()
         // (the group rebalancing, waiting for its other members), and kept waiting in poll()
