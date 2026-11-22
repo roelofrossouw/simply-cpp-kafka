@@ -37,10 +37,24 @@ namespace sc::kafka {
         // max_records() messages (when not 0), the topics stay quiet for poll_at_end() (when it is
         // 0 or less), SIGINT/SIGTERM, or stop(). Several consumers may consume at once, each on
         // its own thread; a signal or stop() ends them all.
+        //
+        // A commit that fails (the group rebalancing as a consumer joins or leaves, say) is reported
+        // and counted (failed_commits()), not thrown: those messages come again to whichever
+        // consumer gets their partition, so a handler must take a message twice. Rebalances are
+        // reported on std::cout, with the partitions, and counted (rebalances()).
         void consume(const std::function<void(const message &)> &handler);
 
         // Asks every consume() running in the process to finish after its current batch.
         static void stop();
+
+        // Called before each commit, on the consuming thread: for a handler that only queues its
+        // work, to wait until it's done, so a committed offset means the batch's work is done.
+        [[nodiscard]] const std::function<void()> &before_commit() const { return before_commit_; }
+        void before_commit(std::function<void()> wait) { before_commit_ = std::move(wait); }
+
+        // Since the process started, over every consumer in it.
+        [[nodiscard]] static std::uint64_t rebalances();
+        [[nodiscard]] static std::uint64_t failed_commits();
 
         [[nodiscard]] int max_records() const { return max_records_; }
         void max_records(const int value) { max_records_ = value; }
@@ -83,6 +97,7 @@ namespace sc::kafka {
         bool auto_commit_ = false;
         sc::log_level log_level_ = sc::log_level::error;
         std::set<std::string> topics_{};
+        std::function<void()> before_commit_;
     };
 
     // Sends messages to Kafka. send() queues a message and returns at once; it goes out in the

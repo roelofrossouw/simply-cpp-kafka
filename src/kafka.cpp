@@ -29,6 +29,8 @@ namespace {
         stop_loop.store(true, std::memory_order_relaxed);
     }
 
+    std::atomic<std::uint64_t> rebalance_count{0}, failed_commit_count{0};
+
     std::mutex consumers_mutex;
     int running_consumers = 0;
     void (*previous_sigint)(int) = SIG_DFL;
@@ -96,8 +98,27 @@ namespace sc::kafka {
 
         const consuming running;
         KafkaConsumer consumer(props);
-        consumer.subscribe(topics_);
+        consumer.subscribe(topics_, [this](const RebalanceEventType type, const TopicPartitions &partitions) {
+            rebalance_count.fetch_add(1, std::memory_order_relaxed);
+            std::string listed;
+            for (const auto &[topic, partition]: partitions) listed += (listed.empty() ? "" : ", ") + topic + "-" + std::to_string(partition);
+            std::cout << "Kafka " << client_id_ << ": partitions "
+                      << (type == RebalanceEventType::PartitionsAssigned ? "assigned: " : "revoked: ")
+                      << (listed.empty() ? "none" : listed) << std::endl;
+        });
         if (from_beginning_) consumer.seekToBeginning();
+
+        // Commits what was polled so far (once before_commit() says its work is done). A failed
+        // commit isn't fatal: those messages come again after the rebalance.
+        const auto commit = [this, &consumer] {
+            if (before_commit_) before_commit_();
+            try {
+                consumer.commitSync();
+            } catch (const std::exception &error) {
+                failed_commit_count.fetch_add(1, std::memory_order_relaxed);
+                std::cerr << "Kafka " << client_id_ << ": commit failed, the batch may come again: " << error.what() << std::endl;
+            }
+        };
 
         unsigned int counter = 0;
         while (!stop_loop.load(std::memory_order_relaxed) && (!max_records_ || counter < static_cast<unsigned>(max_records_))) {
@@ -122,7 +143,7 @@ namespace sc::kafka {
                 }
             }
 
-            consumer.commitSync();
+            if (!records.empty()) commit();
             counter += records.size();
         }
 
@@ -131,6 +152,14 @@ namespace sc::kafka {
 
     void consumer::stop() {
         stop_loop.store(true, std::memory_order_relaxed);
+    }
+
+    std::uint64_t consumer::rebalances() {
+        return rebalance_count.load(std::memory_order_relaxed);
+    }
+
+    std::uint64_t consumer::failed_commits() {
+        return failed_commit_count.load(std::memory_order_relaxed);
     }
 
     class producer::implementation {

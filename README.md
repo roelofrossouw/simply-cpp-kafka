@@ -78,6 +78,13 @@ early when the topics go quiet. Its settings come from the environment:
 | `SC_KAFKA_DEMO_GROUP_ID` | `sc-kafka-demo` |
 | `SC_KAFKA_DEMO_MAX_RECORDS` | `10` |
 
+`consume()` commits after each batch it handled. `before_commit(f)` (since 4.1.0) calls `f`
+first, on the consuming thread: a handler that only queues its work can wait there until it's
+done, so a committed offset means the work is done. A commit that fails (the group rebalancing as
+a consumer joins or leaves) is reported and counted (`consumer::failed_commits()`), not thrown:
+those messages come again, so a handler must take a message twice. Each partition assignment and
+revocation is written to `std::cout` and counted (`consumer::rebalances()`).
+
 Quote values containing `;` in a shell. The consumer commits offsets for its
 group, so don't point `SC_KAFKA_DEMO_GROUP_ID` at a group a real consumer uses:
 the demo would take its partitions and the messages it reads. Build servers have these

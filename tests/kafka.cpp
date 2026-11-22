@@ -32,6 +32,17 @@ int main() {
     CHECK_EQ(consumer.group_id(), "simply-cpp-kafka");
     CHECK_EQ(consumer.auto_commit(), false);
     CHECK(consumer.log_level() == sc::log_level::error);
+    CHECK(!consumer.before_commit()); // nothing to wait for
+    CHECK_EQ(sc::kafka::consumer::rebalances(), 0u);
+    CHECK_EQ(sc::kafka::consumer::failed_commits(), 0u);
+    {
+        int waited = 0;
+        consumer.before_commit([&waited] { ++waited; });
+        consumer.before_commit()();
+        CHECK_EQ(waited, 1);
+        consumer.before_commit({});
+        CHECK(!consumer.before_commit());
+    }
 
     SECTION("Consumer configuration");
     consumer.max_records(25);
