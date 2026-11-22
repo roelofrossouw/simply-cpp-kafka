@@ -85,6 +85,24 @@ a consumer joins or leaves) is reported and counted (`consumer::failed_commits()
 those messages come again, so a handler must take a message twice. Each partition assignment and
 revocation is written to `std::cout` and counted (`consumer::rebalances()`).
 
+Since 5.0.0 (a new soname: `consumer` and `message` changed layout):
+
+- `message` also has its `partition` and `offset`.
+- `assignment("cooperative-sticky")` sets librdkafka's `partition.assignment.strategy`: only the
+  partitions that change owner are given up at a rebalance, so a member busy with a long batch
+  doesn't hold up one joining. Empty (the default) keeps librdkafka's eager default. Every member
+  of a group must use the same kind.
+- `max_batch(d)` ends a batch once it has taken `d`: the handled messages are committed by
+  explicit offsets and the rest read again (a seek back), so a slow handler still polls often.
+  Not with `auto_commit()`. Counted in `consumer::cut_batches()`.
+- `subscribe_wait(d)` (default 5 s): with no assignment by then (the group rebalancing), the
+  consumer carries on waiting in `poll()` instead of throwing as modern-cpp-kafka's `subscribe()`
+  does. Counted in `consumer::subscribe_waits()` and `consumer::assignment_wait_seconds()`.
+- `stop()` ends each consumer after the message it's handling (the rest of the batch comes
+  again), and `consumer::stopping()` tells a long handler to give up: throwing `sc::kafka::abandon`
+  leaves its message unhandled and uncommitted, for the next owner. Each consumer then closes,
+  leaving the group at once.
+
 Quote values containing `;` in a shell. The consumer commits offsets for its
 group, so don't point `SC_KAFKA_DEMO_GROUP_ID` at a group a real consumer uses:
 the demo would take its partitions and the messages it reads. Build servers have these

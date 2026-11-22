@@ -9,7 +9,9 @@
 #include <functional>
 #include <memory>
 #include <initializer_list>
+#include <map>
 #include <set>
+#include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
@@ -20,6 +22,16 @@ namespace sc::kafka {
         std::string key;
         std::int64_t created;
         std::string data;
+        int partition = -1;       // since 5.0.0
+        std::int64_t offset = -1; // since 5.0.0
+    };
+
+    // Thrown by a consume() handler to leave its message unhandled (a service stopping mid-way
+    // through a long job, say): the batch ends there, what was handled before it is committed, and
+    // this message and the rest come again. Since 5.0.0.
+    struct abandon : std::runtime_error {
+        abandon() : std::runtime_error{"message abandoned"} {}
+        using std::runtime_error::runtime_error;
     };
 
     // Reads topics (sc::kafka until 4.0.0).
@@ -44,8 +56,11 @@ namespace sc::kafka {
         // reported on std::cout, with the partitions, and counted (rebalances()).
         void consume(const std::function<void(const message &)> &handler);
 
-        // Asks every consume() running in the process to finish after its current batch.
+        // Asks every consume() running in the process to finish: after the message being
+        // handled (the rest of the batch comes again; see abandon), then it leaves the group.
         static void stop();
+        // Whether stop() (or SIGINT/SIGTERM) asked them to: for a long handler to give up early.
+        [[nodiscard]] static bool stopping();
 
         // Called before each commit, on the consuming thread: for a handler that only queues its
         // work, to wait until it's done, so a committed offset means the batch's work is done.
@@ -55,6 +70,34 @@ namespace sc::kafka {
         // Since the process started, over every consumer in it.
         [[nodiscard]] static std::uint64_t rebalances();
         [[nodiscard]] static std::uint64_t failed_commits();
+        // Consumers that had no partitions yet when subscribing took longer than subscribe_wait()
+        // (the group rebalancing, waiting for its other members), and kept waiting in poll()
+        // rather than giving up; and the seconds they waited, from subscribing to their first
+        // assignment.
+        [[nodiscard]] static std::uint64_t subscribe_waits();
+        [[nodiscard]] static double assignment_wait_seconds();
+        // Batches ended early by max_batch() (or stop()), the rest read again by the next poll.
+        [[nodiscard]] static std::uint64_t cut_batches();
+
+        // librdkafka's partition.assignment.strategy; empty for its default (range,roundrobin:
+        // eager, every member gives up all its partitions at each rebalance and waits for the
+        // slowest to finish its batch). "cooperative-sticky" moves only the partitions that change
+        // owner, so a member busy with a long batch holds up only those. Every member of a group
+        // must use the same kind (eager or cooperative): switch them all at once.
+        [[nodiscard]] const std::string &assignment() const { return assignment_; }
+        void assignment(std::string value) { assignment_ = std::move(value); }
+
+        // Ends a batch early once it has taken this long (0, the default: never): what was handled
+        // is committed and the rest is read again by the next poll, so a slow handler (seconds a
+        // message) still polls often enough that a rebalance doesn't wait long for it. Ignored
+        // with auto_commit(), which would commit the rest unhandled.
+        [[nodiscard]] std::chrono::milliseconds max_batch() const { return max_batch_; }
+        void max_batch(const std::chrono::milliseconds value) { max_batch_ = value; }
+
+        // How long subscribing waits for the first assignment before carrying on in poll(),
+        // where the assignment arrives once the group has rebalanced.
+        [[nodiscard]] std::chrono::milliseconds subscribe_wait() const { return subscribe_wait_; }
+        void subscribe_wait(const std::chrono::milliseconds value) { subscribe_wait_ = value; }
 
         [[nodiscard]] int max_records() const { return max_records_; }
         void max_records(const int value) { max_records_ = value; }
@@ -98,7 +141,24 @@ namespace sc::kafka {
         sc::log_level log_level_ = sc::log_level::error;
         std::set<std::string> topics_{};
         std::function<void()> before_commit_;
+        std::string assignment_;
+        std::chrono::milliseconds max_batch_{0};
+        std::chrono::milliseconds subscribe_wait_{5000};
     };
+
+    // Where a batch cut after its first `handled` records leaves each partition: the offsets to
+    // commit (one past the last handled record of a partition) and the offsets to read again from
+    // (the first record not handled). For consumer::max_batch(); public for its tests.
+    struct batch_record {
+        std::string topic;
+        int partition;
+        std::int64_t offset;
+    };
+    struct batch_cut {
+        std::map<std::pair<std::string, int>, std::int64_t> commit;
+        std::map<std::pair<std::string, int>, std::int64_t> seek;
+    };
+    batch_cut cut_batch(const std::vector<batch_record> &records, std::size_t handled);
 
     // Sends messages to Kafka. send() queues a message and returns at once; it goes out in the
     // background, in batches. A delivery that fails later (no broker, or not delivered within 30

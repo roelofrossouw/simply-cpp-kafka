@@ -35,6 +35,11 @@ int main() {
     CHECK(!consumer.before_commit()); // nothing to wait for
     CHECK_EQ(sc::kafka::consumer::rebalances(), 0u);
     CHECK_EQ(sc::kafka::consumer::failed_commits(), 0u);
+    CHECK_EQ(sc::kafka::consumer::subscribe_waits(), 0u);
+    CHECK_EQ(sc::kafka::consumer::cut_batches(), 0u);
+    CHECK_EQ(consumer.assignment(), ""); // librdkafka's default (eager)
+    CHECK_EQ(consumer.max_batch().count(), 0);
+    CHECK_EQ(consumer.subscribe_wait().count(), 5000);
     {
         int waited = 0;
         consumer.before_commit([&waited] { ++waited; });
@@ -53,7 +58,13 @@ int main() {
     consumer.group_id("streamvms-consumers");
     consumer.auto_commit(true);
     consumer.log_level(sc::log_level::info);
+    consumer.assignment("cooperative-sticky");
+    consumer.max_batch(std::chrono::seconds{10});
+    consumer.subscribe_wait(std::chrono::seconds{2});
 
+    CHECK_EQ(consumer.assignment(), "cooperative-sticky");
+    CHECK_EQ(consumer.max_batch().count(), 10000);
+    CHECK_EQ(consumer.subscribe_wait().count(), 2000);
     CHECK_EQ(consumer.max_records(), 25);
     CHECK_EQ(consumer.from_beginning(), true);
     CHECK_EQ(consumer.poll().count(), 100);
@@ -79,16 +90,47 @@ int main() {
     topics.add_topic({"five", "six"});
     CHECK_NOTHROW(topics.add_topic("one"));
 
+    SECTION("A cut batch commits what was handled and reads the rest again");
+    {
+        using key = std::pair<std::string, int>;
+        const std::vector<sc::kafka::batch_record> records{
+            {"video", 0, 10}, {"video", 1, 7}, {"video", 0, 11}, {"video", 1, 8}, {"video", 0, 12}, {"photo", 3, 40}};
+        const auto all = sc::kafka::cut_batch(records, records.size());
+        CHECK(all.seek.empty());
+        CHECK_EQ(all.commit.size(), 3u);
+        CHECK_EQ(all.commit.at(key{"video", 0}), 13);
+        CHECK_EQ(all.commit.at(key{"video", 1}), 9);
+        CHECK_EQ(all.commit.at(key{"photo", 3}), 41);
+
+        const auto three = sc::kafka::cut_batch(records, 3); // video-0 10 and 11, video-1 7
+        CHECK_EQ(three.commit.size(), 2u);
+        CHECK_EQ(three.commit.at(key{"video", 0}), 12);
+        CHECK_EQ(three.commit.at(key{"video", 1}), 8);
+        CHECK_EQ(three.seek.size(), 3u);
+        CHECK_EQ(three.seek.at(key{"video", 0}), 12);
+        CHECK_EQ(three.seek.at(key{"video", 1}), 8);
+        CHECK_EQ(three.seek.at(key{"photo", 3}), 40); // nothing of it handled: not committed, read again
+
+        const auto none = sc::kafka::cut_batch(records, 0);
+        CHECK(none.commit.empty());
+        CHECK_EQ(none.seek.size(), 3u);
+        CHECK_EQ(none.seek.at(key{"video", 0}), 10);
+
+        CHECK(sc::kafka::cut_batch({}, 0).commit.empty());
+    }
+
     SECTION("Consumers on their own threads share the signal handling");
     {
-        // No broker answers on port 1, so each consume() ends when subscribe() times out (about
-        // 30 seconds). While they wait, SIGTERM (systemctl stop) must be caught - asking them all
-        // to stop - not the default kill; once the last has finished, the default is back.
+        // No broker answers on port 1, so each consume() waits for partitions that never come
+        // (subscribe_wait(), then in poll()) until stop(). While they wait, SIGTERM (systemctl
+        // stop) must be caught - asking them all to stop - not the default kill; once the last
+        // has finished, the default is back. Waiting past subscribe_wait() is counted, not thrown.
         std::vector<std::thread> threads;
         std::atomic<int> finished{0};
         for (const auto *topic: {"first", "second"}) {
             threads.emplace_back([topic, &finished] {
                 sc::kafka::consumer quiet{"127.0.0.1:1"};
+                quiet.subscribe_wait(std::chrono::seconds{1});
                 quiet.add_topic(topic);
                 try {
                     quiet.consume([](const sc::kafka::message &) {});
@@ -103,6 +145,7 @@ int main() {
         sc::kafka::consumer::stop();
         for (auto &thread: threads) thread.join();
         CHECK_EQ(finished.load(), 2);
+        CHECK_EQ(sc::kafka::consumer::subscribe_waits(), 2u); // waited on in poll(), not given up
         const auto handler = std::signal(SIGTERM, SIG_DFL);
         CHECK(handler == SIG_DFL);
     }
