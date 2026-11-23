@@ -24,6 +24,74 @@ int main() {
     CHECK_THROWS_AS(sc::kafka::consumer{"kafka1,kafka2"}, std::invalid_argument);
     CHECK_THROWS_AS(sc::kafka::consumer{"kafka1:nope"}, std::invalid_argument);
 
+    SECTION("Security settings");
+    {
+        using sc::kafka::sasl_mechanism;
+        using sc::kafka::security_protocol;
+        CHECK(sc::kafka::security_protocol_from("SASL_SSL") == security_protocol::sasl_ssl);
+        CHECK(sc::kafka::security_protocol_from("sasl-plaintext") == security_protocol::sasl_plaintext);
+        CHECK(sc::kafka::security_protocol_from("plaintext") == security_protocol::plaintext);
+        CHECK(sc::kafka::security_protocol_from("ssl") == security_protocol::ssl);
+        CHECK_THROWS_AS((void) sc::kafka::security_protocol_from("tls"), std::invalid_argument);
+        CHECK(sc::kafka::sasl_mechanism_from("SCRAM-SHA-256") == sasl_mechanism::scram_sha_256);
+        CHECK(sc::kafka::sasl_mechanism_from("scram_sha_512") == sasl_mechanism::scram_sha_512);
+        CHECK(sc::kafka::sasl_mechanism_from("Plain") == sasl_mechanism::plain);
+        CHECK_THROWS_AS((void) sc::kafka::sasl_mechanism_from("GSSAPI"), std::invalid_argument);
+        CHECK_EQ(sc::kafka::to_string(security_protocol::sasl_ssl), "sasl_ssl");
+        CHECK_EQ(sc::kafka::to_string(sasl_mechanism::scram_sha_512), "SCRAM-SHA-512");
+
+        const sc::kafka::security plain{};
+        CHECK(plain.properties().empty()); // plaintext: librdkafka's defaults
+        CHECK_EQ(plain.describe(), "plaintext");
+
+        sc::kafka::security scram;
+        scram.protocol = security_protocol::sasl_plaintext;
+        scram.username = "streamvms";
+        scram.password = "not-a-real-password";
+        const auto props = scram.properties();
+        CHECK_EQ(props.size(), 4u);
+        CHECK_EQ(props.at("security.protocol"), "sasl_plaintext");
+        CHECK_EQ(props.at("sasl.mechanism"), "SCRAM-SHA-512");
+        CHECK_EQ(props.at("sasl.username"), "streamvms");
+        CHECK_EQ(props.at("sasl.password"), "not-a-real-password");
+        CHECK(!props.contains("ssl.ca.location")); // no TLS
+        CHECK_EQ(scram.describe(), "sasl_plaintext SCRAM-SHA-512 as streamvms");
+        CHECK(scram.describe().find("not-a-real-password") == std::string::npos);
+
+        scram.protocol = security_protocol::sasl_ssl;
+        scram.mechanism = sasl_mechanism::scram_sha_256;
+        scram.ca_location = "/etc/ssl/kafka-ca.pem";
+        const auto tls_props = scram.properties();
+        CHECK_EQ(tls_props.at("ssl.ca.location"), "/etc/ssl/kafka-ca.pem");
+        CHECK_EQ(tls_props.at("sasl.mechanism"), "SCRAM-SHA-256");
+        CHECK_EQ(scram.describe(), "sasl_ssl SCRAM-SHA-256 as streamvms, CA /etc/ssl/kafka-ca.pem");
+
+        sc::kafka::security tls;
+        tls.protocol = security_protocol::ssl;
+        CHECK_EQ(tls.properties().size(), 1u); // the system's CAs
+        CHECK_EQ(tls.describe(), "ssl, system CAs");
+
+        sc::kafka::security missing;
+        missing.protocol = security_protocol::sasl_ssl;
+        missing.username = "streamvms";
+        CHECK_THROWS_AS((void) missing.properties(), std::invalid_argument); // no password
+
+        CHECK(sc::kafka::security::from("", "", "", "").protocol == security_protocol::plaintext);
+        const auto read = sc::kafka::security::from("sasl_ssl", "scram-sha-256", "twc-poller", "not-a-real-password", "/etc/ca.pem");
+        CHECK(read.protocol == security_protocol::sasl_ssl);
+        CHECK(read.mechanism == sasl_mechanism::scram_sha_256);
+        CHECK_EQ(read.ca_location, "/etc/ca.pem");
+        CHECK_THROWS_AS((void) sc::kafka::security::from("sasl_plaintext", "", "twc-poller", ""), std::invalid_argument);
+        CHECK_THROWS_AS((void) sc::kafka::security::from("kerberos", "", "", ""), std::invalid_argument);
+
+        sc::kafka::consumer secured{"localhost:9092"};
+        CHECK(secured.security().protocol == security_protocol::plaintext);
+        secured.security(scram);
+        CHECK(secured.security().protocol == security_protocol::sasl_ssl);
+        secured.add_topic("a");
+        CHECK_EQ(secured.topics().size(), 1u);
+    }
+
     SECTION("Default consumer configuration");
     CHECK_EQ(consumer.max_records(), 0);
     CHECK_EQ(consumer.from_beginning(), false);
@@ -186,6 +254,18 @@ int main() {
         CHECK_THROWS_AS(sc::kafka::producer{"kafka1,kafka2"}, std::invalid_argument);
         const sc::kafka::producer producer{"kafka1;kafka2:9093"};
         CHECK_EQ(producer.brokers().to_string(), "kafka1:9092;kafka2:9093");
+    }
+
+    SECTION("A producer takes security settings, and refuses SASL without a password");
+    {
+        sc::kafka::security scram;
+        scram.protocol = sc::kafka::security_protocol::sasl_plaintext;
+        scram.username = "sc-kafka-test";
+        scram.password = "not-a-real-password";
+        const sc::kafka::producer secured{"127.0.0.1:1", "sc-kafka-test", scram};
+        CHECK_EQ(secured.brokers().to_string(), "127.0.0.1:1");
+        scram.password.clear();
+        CHECK_THROWS_AS((sc::kafka::producer{"127.0.0.1:1", "sc-kafka-test", scram}), std::invalid_argument);
     }
 
     SECTION("A producer with no broker: send() queues, flush() times out, nothing is delivered");

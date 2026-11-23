@@ -13,6 +13,7 @@
 #include <set>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -32,6 +33,48 @@ namespace sc::kafka {
     struct abandon : std::runtime_error {
         abandon() : std::runtime_error{"message abandoned"} {}
         using std::runtime_error::runtime_error;
+    };
+
+    // How a client reaches its brokers (librdkafka's security.protocol). Since 5.1.0.
+    enum class security_protocol { plaintext, ssl, sasl_plaintext, sasl_ssl };
+    // How a SASL client signs in (librdkafka's sasl.mechanism). Since 5.1.0.
+    enum class sasl_mechanism { scram_sha_256, scram_sha_512, plain };
+
+    // Their names as librdkafka and config files spell them ("sasl_ssl", "SCRAM-SHA-512"); the
+    // parsers ignore case and '-' versus '_', and throw std::invalid_argument for anything else.
+    [[nodiscard]] std::string to_string(security_protocol value);
+    [[nodiscard]] std::string to_string(sasl_mechanism value);
+    [[nodiscard]] security_protocol security_protocol_from(std::string_view name);
+    [[nodiscard]] sasl_mechanism sasl_mechanism_from(std::string_view name);
+
+    // Signing in to the brokers, for a consumer or a producer: plaintext (the default, no
+    // sign-in), TLS, SASL (SCRAM or PLAIN) or both. Since 5.1.0.
+    struct security {
+        security_protocol protocol = security_protocol::plaintext;
+        sasl_mechanism mechanism = sasl_mechanism::scram_sha_512; // with sasl_plaintext / sasl_ssl
+        std::string username;                                     // with sasl_plaintext / sasl_ssl
+        std::string password;                                     // never logged; see describe()
+        std::string ca_location; // a CA file (PEM) for ssl / sasl_ssl; empty: the system's CAs
+
+        [[nodiscard]] bool uses_sasl() const {
+            return protocol == security_protocol::sasl_plaintext || protocol == security_protocol::sasl_ssl;
+        }
+        [[nodiscard]] bool uses_tls() const {
+            return protocol == security_protocol::ssl || protocol == security_protocol::sasl_ssl;
+        }
+
+        // The librdkafka properties for these settings (none for plaintext). Throws
+        // std::invalid_argument when SASL has no username or password.
+        [[nodiscard]] std::map<std::string, std::string> properties() const;
+        // For logs and status pages: "sasl_ssl SCRAM-SHA-512 as streamvms, CA /etc/x.pem";
+        // never the password.
+        [[nodiscard]] std::string describe() const;
+
+        // From a configuration's text: protocol and mechanism as security_protocol_from() and
+        // sasl_mechanism_from() read them (empty: plaintext, SCRAM-SHA-512). Throws
+        // std::invalid_argument as they and properties() do.
+        [[nodiscard]] static security from(std::string_view protocol, std::string_view mechanism, std::string username,
+                                           std::string password, std::string ca_location = {});
     };
 
     // Reads topics (sc::kafka until 4.0.0).
@@ -129,6 +172,12 @@ namespace sc::kafka {
         [[nodiscard]] sc::log_level log_level() const { return log_level_; }
         void log_level(const sc::log_level value) { log_level_ = value; }
 
+        // Signing in to the brokers (plaintext by default). Since 5.1.0.
+        [[nodiscard]] const kafka::security &security() const { return security_; }
+        void security(kafka::security value) { security_ = std::move(value); }
+
+        [[nodiscard]] const std::set<std::string> &topics() const { return topics_; }
+
         void add_topic(const std::string &topic_name) { topics_.emplace(topic_name); }
         void add_topic(const std::vector<std::string> &topic_names) { topics_.insert(topic_names.begin(), topic_names.end()); }
         // Keeps add_topic({"a"}) unambiguous now that a vector is accepted too.
@@ -149,6 +198,7 @@ namespace sc::kafka {
         std::string assignment_;
         std::chrono::milliseconds max_batch_{0};
         std::chrono::milliseconds subscribe_wait_{5000};
+        kafka::security security_;
     };
 
     // Where a batch cut after its first `handled` records leaves each partition: the offsets to
@@ -173,6 +223,8 @@ namespace sc::kafka {
     public:
         // Brokers as for sc::kafka::consumer (9092 without a port; separate them with ';').
         explicit producer(ip_endpoints brokers, std::string client_id = "simply-cpp-kafka");
+        // Signing in as security says (since 5.1.0).
+        producer(ip_endpoints brokers, std::string client_id, const kafka::security &security);
         ~producer();
 
         producer(const producer &) = delete;

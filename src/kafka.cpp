@@ -6,6 +6,7 @@
 
 #include <atomic>
 #include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <csignal>
 #include <exception>
@@ -81,6 +82,93 @@ namespace sc::kafka {
     }
 
     namespace {
+        // Lower case, '-' as '_': "SCRAM-SHA-512" and "scram_sha_512" name the same thing.
+        std::string folded(const std::string_view name) {
+            std::string out;
+            out.reserve(name.size());
+            for (const char c: name) out += c == '-' ? '_' : static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            return out;
+        }
+
+        void put(Properties &props, const security &settings) {
+            for (const auto &[key, value]: settings.properties()) props.put(key, value);
+        }
+    }
+
+    std::string to_string(const security_protocol value) {
+        switch (value) {
+            case security_protocol::plaintext: return "plaintext";
+            case security_protocol::ssl: return "ssl";
+            case security_protocol::sasl_plaintext: return "sasl_plaintext";
+            case security_protocol::sasl_ssl: return "sasl_ssl";
+        }
+        return "plaintext";
+    }
+
+    std::string to_string(const sasl_mechanism value) {
+        switch (value) {
+            case sasl_mechanism::scram_sha_256: return "SCRAM-SHA-256";
+            case sasl_mechanism::scram_sha_512: return "SCRAM-SHA-512";
+            case sasl_mechanism::plain: return "PLAIN";
+        }
+        return "SCRAM-SHA-512";
+    }
+
+    security_protocol security_protocol_from(const std::string_view name) {
+        const auto key = folded(name);
+        if (key == "plaintext") return security_protocol::plaintext;
+        if (key == "ssl") return security_protocol::ssl;
+        if (key == "sasl_plaintext") return security_protocol::sasl_plaintext;
+        if (key == "sasl_ssl") return security_protocol::sasl_ssl;
+        throw std::invalid_argument{"kafka security protocol '" + std::string{name} +
+                                    "' is not one of plaintext, ssl, sasl_plaintext, sasl_ssl"};
+    }
+
+    sasl_mechanism sasl_mechanism_from(const std::string_view name) {
+        const auto key = folded(name);
+        if (key == "scram_sha_256") return sasl_mechanism::scram_sha_256;
+        if (key == "scram_sha_512") return sasl_mechanism::scram_sha_512;
+        if (key == "plain") return sasl_mechanism::plain;
+        throw std::invalid_argument{"kafka SASL mechanism '" + std::string{name} +
+                                    "' is not one of SCRAM-SHA-256, SCRAM-SHA-512, PLAIN"};
+    }
+
+    std::map<std::string, std::string> security::properties() const {
+        std::map<std::string, std::string> props;
+        if (protocol == security_protocol::plaintext) return props;
+        props["security.protocol"] = to_string(protocol);
+        if (uses_sasl()) {
+            if (username.empty() || password.empty()) {
+                throw std::invalid_argument{"kafka " + to_string(protocol) + " needs a username and a password"};
+            }
+            props["sasl.mechanism"] = to_string(mechanism);
+            props["sasl.username"] = username;
+            props["sasl.password"] = password;
+        }
+        if (uses_tls() && !ca_location.empty()) props["ssl.ca.location"] = ca_location;
+        return props;
+    }
+
+    security security::from(const std::string_view protocol, const std::string_view mechanism, std::string username,
+                            std::string password, std::string ca_location) {
+        security out;
+        out.protocol = protocol.empty() ? security_protocol::plaintext : security_protocol_from(protocol);
+        out.mechanism = mechanism.empty() ? sasl_mechanism::scram_sha_512 : sasl_mechanism_from(mechanism);
+        out.username = std::move(username);
+        out.password = std::move(password);
+        out.ca_location = std::move(ca_location);
+        (void) out.properties(); // SASL without a username or password
+        return out;
+    }
+
+    std::string security::describe() const {
+        std::string text = to_string(protocol);
+        if (uses_sasl()) text += " " + to_string(mechanism) + " as " + (username.empty() ? "(no username)" : username);
+        if (uses_tls()) text += ca_location.empty() ? ", system CAs" : ", CA " + ca_location;
+        return text;
+    }
+
+    namespace {
         ip_endpoints checked_brokers(ip_endpoints brokers) {
             if (brokers.empty()) throw std::invalid_argument{"kafka needs at least one broker"};
             for (auto &broker: brokers) {
@@ -127,6 +215,7 @@ namespace sc::kafka {
         props.put("enable.auto.commit", auto_commit_ ? "true" : "false");
         props.put("log_level", std::to_string(static_cast<int>(log_level_)));
         if (!assignment_.empty()) props.put("partition.assignment.strategy", assignment_);
+        put(props, security_);
 
         const consuming running;
         // Handled offsets a commit couldn't send yet (see pending_offsets.h). Declared before the
@@ -334,15 +423,16 @@ namespace sc::kafka {
 
     class producer::implementation {
     public:
-        implementation(const ip_endpoints &brokers, const std::string &client_id)
-            : producer_(properties(brokers, client_id)) {
+        implementation(const ip_endpoints &brokers, const std::string &client_id, const kafka::security &security)
+            : producer_(properties(brokers, client_id, security)) {
         }
 
         KafkaProducer producer_;
 
     private:
-        static Properties properties(const ip_endpoints &brokers, const std::string &client_id) {
+        static Properties properties(const ip_endpoints &brokers, const std::string &client_id, const kafka::security &security) {
             Properties props;
+            put(props, security);
             props.put("bootstrap.servers", brokers.to_string(","));
             props.put("client.id", client_id);
             props.put("linger.ms", "5");             // small batches: positions and alarms should go out at once
@@ -353,8 +443,12 @@ namespace sc::kafka {
     };
 
     producer::producer(ip_endpoints brokers, std::string client_id)
+        : producer(std::move(brokers), std::move(client_id), kafka::security{}) {
+    }
+
+    producer::producer(ip_endpoints brokers, std::string client_id, const kafka::security &security)
         : brokers_(checked_brokers(std::move(brokers))),
-          implementation_(std::make_unique<implementation>(brokers_, client_id)) {
+          implementation_(std::make_unique<implementation>(brokers_, client_id, security)) {
     }
 
     producer::~producer() {

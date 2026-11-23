@@ -135,6 +135,30 @@ consumer.consume([&](const sc::kafka::message &message) {
 ```
 <!-- /sc-example -->
 
+## Signing in (SASL, TLS)
+
+Both the consumer and the producer take `sc::kafka::security` (since 5.1.0): plaintext by
+default; `ssl`, `sasl_plaintext` or `sasl_ssl`, with SCRAM-SHA-256, SCRAM-SHA-512 (the default)
+or PLAIN, a username and password, and for TLS an optional CA file (else the system's CAs).
+
+```cpp
+sc::kafka::security security;
+security.protocol = sc::kafka::security_protocol_from(conf_protocol); // "sasl_plaintext"
+security.mechanism = sc::kafka::sasl_mechanism_from(conf_mechanism);  // "SCRAM-SHA-512"
+security.username = "streamvms";
+security.password = conf_password;
+
+consumer.security(security);
+sc::kafka::producer producer{"kafka1;kafka2;kafka3", "twc-poller", security};
+```
+
+`security::from(protocol, mechanism, username, password, ca)` builds one from a configuration's
+text in one go (empty protocol: plaintext). `security_protocol_from()` and `sasl_mechanism_from()` read config text (any case, `-` or `_`)
+and throw `std::invalid_argument` for anything else, as does SASL without a username or
+password. `describe()` gives the settings for a log line or status page without the password;
+modern-cpp-kafka masks `*.password` when it logs its properties. Ubuntu's librdkafka (noble 2.3,
+resolute 2.13) is built with `ssl`, `sasl_plain` and `sasl_scram`.
+
 ## Producing
 
 `sc::kafka::producer` sends messages: `send(topic, key, value)` queues one and
