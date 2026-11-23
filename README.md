@@ -159,6 +159,14 @@ password. `describe()` gives the settings for a log line or status page without 
 modern-cpp-kafka masks `*.password` when it logs its properties. Ubuntu's librdkafka (noble 2.3,
 resolute 2.13) is built with `ssl`, `sasl_plain` and `sasl_scram`.
 
+Since 5.2.0 the password can come from a file instead (the apps' `sasl_password_file` key):
+`security::from(protocol, mechanism, username, password, ca, password_file)` reads it when
+`password_file` is set, and `security::password_from_file(path)` reads one on its own. The file
+holds just the password (one line; trailing whitespace and newlines are dropped), so give each
+client its own root-only file rather than a shared "user password" list. Setting both a password
+and a file, or a file that's missing, unreadable or empty, throws `std::invalid_argument`, which
+names the file but never its content.
+
 ## Producing
 
 `sc::kafka::producer` sends messages: `send(topic, key, value)` queues one and

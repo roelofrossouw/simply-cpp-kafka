@@ -8,6 +8,8 @@
 #include <algorithm>
 #include <cctype>
 #include <chrono>
+#include <fstream>
+#include <iterator>
 #include <csignal>
 #include <exception>
 #include <iostream>
@@ -159,6 +161,27 @@ namespace sc::kafka {
         out.ca_location = std::move(ca_location);
         (void) out.properties(); // SASL without a username or password
         return out;
+    }
+
+    std::string security::password_from_file(const std::string &path) {
+        std::ifstream in{path, std::ios::binary};
+        if (!in) throw std::invalid_argument{"kafka sasl_password_file " + path + " can't be read"};
+        std::string text{std::istreambuf_iterator<char>{in}, std::istreambuf_iterator<char>{}};
+        if (in.bad()) throw std::invalid_argument{"kafka sasl_password_file " + path + " can't be read"};
+        while (!text.empty() && std::isspace(static_cast<unsigned char>(text.back()))) text.pop_back();
+        if (text.empty()) throw std::invalid_argument{"kafka sasl_password_file " + path + " is empty"};
+        return text;
+    }
+
+    security security::from(const std::string_view protocol, const std::string_view mechanism, std::string username,
+                            std::string password, std::string ca_location, const std::string &password_file) {
+        if (!password_file.empty()) {
+            if (!password.empty()) {
+                throw std::invalid_argument{"kafka: set sasl_password or sasl_password_file, not both"};
+            }
+            password = password_from_file(password_file);
+        }
+        return from(protocol, mechanism, std::move(username), std::move(password), std::move(ca_location));
     }
 
     std::string security::describe() const {

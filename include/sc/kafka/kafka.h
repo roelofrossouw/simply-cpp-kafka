@@ -75,6 +75,14 @@ namespace sc::kafka {
         // std::invalid_argument as they and properties() do.
         [[nodiscard]] static security from(std::string_view protocol, std::string_view mechanism, std::string username,
                                            std::string password, std::string ca_location = {});
+        // The same, with the password read from password_file instead when that is set (since
+        // 5.2.0): the file holds just the password; trailing whitespace and newlines are dropped.
+        // Throws std::invalid_argument when both password and password_file are set, or the file
+        // can't be read or is empty (naming the file, never its content).
+        [[nodiscard]] static security from(std::string_view protocol, std::string_view mechanism, std::string username,
+                                           std::string password, std::string ca_location, const std::string &password_file);
+        // The password in a file, as from() reads it (since 5.2.0).
+        [[nodiscard]] static std::string password_from_file(const std::string &path);
     };
 
     // Reads topics (sc::kafka until 4.0.0).

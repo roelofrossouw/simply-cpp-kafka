@@ -6,6 +6,9 @@
 #include <chrono>
 #include <csignal>
 #include <cstdlib>
+#include <filesystem>
+#include <fstream>
+#include <unistd.h>
 #include <iostream>
 #include <stdexcept>
 #include <thread>
@@ -83,6 +86,37 @@ int main() {
         CHECK_EQ(read.ca_location, "/etc/ca.pem");
         CHECK_THROWS_AS((void) sc::kafka::security::from("sasl_plaintext", "", "twc-poller", ""), std::invalid_argument);
         CHECK_THROWS_AS((void) sc::kafka::security::from("kerberos", "", "", ""), std::invalid_argument);
+
+        // sasl_password_file (since 5.2.0): the file holds the password; trailing whitespace dropped.
+        {
+            const auto dir = std::filesystem::temp_directory_path() / ("sc-kafka-test-" + std::to_string(::getpid()));
+            std::filesystem::create_directories(dir);
+            const auto file = (dir / "password").string();
+            const auto empty = (dir / "empty").string();
+            std::ofstream{file} << "not-a-real-password \n\n";
+            std::ofstream{empty} << " \n";
+            CHECK_EQ(sc::kafka::security::password_from_file(file), "not-a-real-password");
+            const auto from_file = sc::kafka::security::from("sasl_plaintext", "", "streamvms", "", "", file);
+            CHECK_EQ(from_file.password, "not-a-real-password");
+            const auto from_file_props = from_file.properties();
+            CHECK_EQ(from_file_props.at("sasl.password"), "not-a-real-password");
+            CHECK_EQ(sc::kafka::security::from("sasl_plaintext", "", "streamvms", "given", "", "").password, "given");
+            CHECK_THROWS_AS((void) sc::kafka::security::from("sasl_plaintext", "", "streamvms", "given", "", file), std::invalid_argument);
+            CHECK_THROWS_AS((void) sc::kafka::security::from("sasl_plaintext", "", "streamvms", "", "", empty), std::invalid_argument);
+            const auto missing_file = (dir / "missing").string();
+            CHECK_THROWS_AS((void) sc::kafka::security::password_from_file(missing_file), std::invalid_argument);
+            try {
+                (void) sc::kafka::security::password_from_file(missing_file);
+            } catch (const std::invalid_argument &error) {
+                CHECK(std::string{error.what()}.find(missing_file) != std::string::npos); // names the file
+            }
+            try {
+                (void) sc::kafka::security::from("sasl_plaintext", "", "streamvms", "given", "", file);
+            } catch (const std::invalid_argument &error) {
+                CHECK(std::string{error.what()}.find("not-a-real-password") == std::string::npos); // never the content
+            }
+            std::filesystem::remove_all(dir);
+        }
 
         sc::kafka::consumer secured{"localhost:9092"};
         CHECK(secured.security().protocol == security_protocol::plaintext);
