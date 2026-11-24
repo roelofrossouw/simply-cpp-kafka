@@ -1,6 +1,6 @@
 #ifndef SC_KAFKA_H
 #define SC_KAFKA_H
-#include <sc/core/ip_endpoints.h>
+#include <sc/net/ip_endpoints.h>
 #include <sc/core/log_level.h>
 
 #include <atomic>

@@ -17,7 +17,8 @@ find_or_fetch_package(modern-cpp-kafka-api
         GIT_REPOSITORY https://github.com/morganstanley/modern-cpp-kafka.git
         GIT_TAG v2023.01.05)
 # kafka.h takes its brokers as an sc::ip_endpoints; the demo also uses sc::getenv() and sc::explode().
-find_or_install_package(sc-core simply-cpp-dev simply-cpp 3.0.0)
+find_or_install_package(sc-core simply-cpp-dev simply-cpp 4.0.0)
+find_or_install_package(sc-net simply-cpp-net-dev simply-cpp-net 1.0.0)
 # A Homebrew upgrade removes the version folder a cached path points into: look again then.
 if (SC_KAFKA_RDKAFKA_LIBRARY AND NOT EXISTS "${SC_KAFKA_RDKAFKA_LIBRARY}")
     unset(SC_KAFKA_RDKAFKA_LIBRARY CACHE)
@@ -32,7 +33,7 @@ set(SOURCE_LIBRARIES)
 set(SOURCE_LINK_LIBRARIES)
 
 add_sc_object(kafka LINK_LIBRARIES modern-cpp-kafka-api
-        PUBLIC_LINK_LIBRARIES sc::sc-core ${SC_KAFKA_RDKAFKA_LIBRARY})
+        PUBLIC_LINK_LIBRARIES sc::sc-core sc::sc-net ${SC_KAFKA_RDKAFKA_LIBRARY})
 
 ######################
 # Exported Libraries #
@@ -65,4 +66,4 @@ add_sc_example(sc-kafka-demo)
 #############
 # librdkafka1 (the C library it links) comes from shlibdeps; nothing from modern-cpp-kafka (headers only) is needed at run time.
 # The -dev package's CMake config finds rdkafka, so it needs librdkafka-dev (the same name on every release).
-package_sc_module(DEV_DEPENDS "simply-cpp-dev (>= 3.0.0~)" librdkafka-dev)
+package_sc_module(DEV_DEPENDS "simply-cpp-dev (>= 4.0.0~)" "simply-cpp-net-dev (>= 1.0.0~)" librdkafka-dev)
